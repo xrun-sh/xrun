@@ -59,7 +59,15 @@ pub(super) async fn serve(
                     )?;
                     bail!(ErrorCode::JobCanceled.error("operation canceled before process launch"));
                 }
-                let child = crate::process::spawn(&program, &args, &cwd, &env, &process_id, false)?;
+                let child = crate::process::spawn(
+                    &program,
+                    &args,
+                    &cwd,
+                    &env,
+                    &process_id,
+                    false,
+                    execution.merge_stderr,
+                )?;
                 if let Err(error) = runtime.store.record_process(
                     &process_id,
                     ProcessIdentity {

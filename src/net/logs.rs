@@ -224,6 +224,7 @@ mod tests {
             &JobContext::new("database"),
             "digest".into(),
             JobDetails::Exec(CommandParams {
+                merge_stderr: false,
                 program: "echo".into(),
                 args: vec!["immutable".into()],
                 cwd: "/tmp/owned".into(),

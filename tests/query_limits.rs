@@ -21,6 +21,7 @@ fn job(lab: &Lab, store: &JobStore, id: &str) -> Job {
         leftover_possible: false,
         process: None,
         details: JobDetails::Exec(CommandParams {
+            merge_stderr: false,
             program: "fixture".into(),
             args: vec![],
             cwd: lab.target.to_string_lossy().into(),
@@ -225,6 +226,7 @@ async fn execution_that_cannot_fit_its_acknowledgment_is_rejected_before_accepta
         Data::Ready { .. }
     ));
     let request = Execution {
+        merge_stderr: false,
         request_id: "too-large-to-ack".into(),
         db_id: store.db_id.clone(),
         program: "unused".into(),

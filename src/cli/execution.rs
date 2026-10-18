@@ -79,6 +79,7 @@ pub(super) async fn run(
         e.command[1..].to_vec()
     };
     let execution = Execution {
+        merge_stderr: e.merge_stderr,
         request_id: e
             .request_id
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string()),
@@ -259,13 +260,7 @@ pub(super) async fn run(
         };
         match result {
             Ok(result) => {
-                if let Some(error) = result
-                    .error_message
-                    .as_ref()
-                    .or(result.output_loss_reason.as_ref())
-                {
-                    eprintln!("[xrun] {error}")
-                }
+                job_diagnostic(json, &result);
                 return Ok(job_code(&result));
             }
             Err(error) => {
@@ -394,6 +389,7 @@ async fn cancel_known(id: &Identity, target: &str, job: &str, json: bool) -> Res
 pub(super) async fn stream(id: &Identity, target: &str, e: Execute) -> Result<i32> {
     let mut s = session(id, target).await?;
     let execution = StreamExecution {
+        merge_stderr: e.merge_stderr,
         program: e
             .command
             .first()

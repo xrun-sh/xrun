@@ -136,7 +136,7 @@ mod tests {
                     &window,
                     "remote_submit",
                     json!({"device":"peer1","command":{
-                        "request_id":"draft","script":"","shell":"sh","cwd":null,"timeout":30
+                        "merge_stderr":false,"request_id":"draft","script":"","shell":"sh","cwd":null,"timeout":30
                     }}),
                 )
                 .unwrap_err();

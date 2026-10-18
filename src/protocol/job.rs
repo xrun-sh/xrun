@@ -54,6 +54,8 @@ impl JobKind {
 #[serde(deny_unknown_fields)]
 /// Displayable command parameters, without environment values or input bodies.
 pub struct CommandParams {
+    /// Whether both child output streams share the stdout pipe.
+    pub merge_stderr: bool,
     /// Program supplied by the caller.
     pub program: String,
     /// Explicit arguments, without implicit shell parsing.
@@ -332,6 +334,7 @@ impl Request {
     pub fn job_details(&self) -> Option<JobDetails> {
         match self {
             Self::Exec { execution: e, .. } => Some(JobDetails::Exec(CommandParams {
+                merge_stderr: e.merge_stderr,
                 program: e.program.clone(),
                 args: e.args.clone(),
                 cwd: e.cwd.clone(),
@@ -341,6 +344,7 @@ impl Request {
                 input_sha256: Some(e.input_sha256.clone()),
             })),
             Self::StreamExec { execution: e, .. } => Some(JobDetails::StreamExec(CommandParams {
+                merge_stderr: e.merge_stderr,
                 program: e.program.clone(),
                 args: e.args.clone(),
                 cwd: e.cwd.clone(),

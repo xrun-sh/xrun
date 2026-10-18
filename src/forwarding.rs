@@ -102,7 +102,7 @@ pub(crate) async fn bridge(ws: &mut Ws, tcp: TcpStream) -> Result<(u64, u64)> {
                         acknowledged = true;
                         let _ = ack_tx.take().unwrap().send(());
                     }
-                    Data::Error { code, message } => {
+                    Data::Error { code, message, .. } => {
                         bail!(crate::error::CodedError::from_wire(code, message))
                     }
                     _ => bail!(ErrorCode::InvalidMessage.error("expected forwarding EOF")),

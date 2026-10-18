@@ -11,7 +11,9 @@ mod logs;
 mod network;
 mod relay;
 mod remote;
+mod service_path;
 mod support;
+mod wait;
 
 use crate::{net, protocol::RESERVED};
 use args::{DeviceCli, LocalCli, Remote};

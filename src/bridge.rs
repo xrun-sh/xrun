@@ -109,6 +109,10 @@ struct Failure {
 impl Failure {
     fn from_error(error: &anyhow::Error) -> Self {
         let (code, message) = crate::error::wire(error);
+        let message = match crate::error::hint(&crate::error::ErrorCode::from_wire(code.clone())) {
+            Some(hint) => format!("{message}\nhint: {hint}"),
+            None => message,
+        };
         Self { code, message }
     }
 }
@@ -755,7 +759,7 @@ impl Bridge {
 fn snapshot() -> Result<Value> {
     let snapshot = client::local_snapshot()?;
     let network_error = match snapshot.network_error {
-        Some(Data::Error { code, message }) => Some(Failure { code, message }),
+        Some(Data::Error { code, message, .. }) => Some(Failure { code, message }),
         _ => None,
     };
     Ok(json!({

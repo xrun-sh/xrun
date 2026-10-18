@@ -80,7 +80,7 @@ impl Invitations {
             let result = match error {
                 None => Ok(()),
                 Some(error) => match *error {
-                    Data::Error { code, message } => {
+                    Data::Error { code, message, .. } => {
                         Err(crate::error::CodedError::from_wire(code, message).into())
                     }
                     _ => Err(ErrorCode::InvalidMessage

@@ -21,7 +21,27 @@ pub(super) fn diagnostic(json: bool, error: &anyhow::Error) {
     if json {
         eprintln!("{}", serde_json::to_string(&Data::error(error)).unwrap())
     } else {
-        eprintln!("[xrun] {error:#}")
+        eprintln!("[xrun] {error:#}");
+        if let Some(hint) = crate::error::code(error)
+            .as_ref()
+            .and_then(crate::error::hint)
+        {
+            eprintln!("hint: {hint}");
+        }
+    }
+}
+pub(super) fn job_diagnostic(json: bool, job: &Job) {
+    if let Some(code) = &job.error_code {
+        let message = job
+            .error_message
+            .as_deref()
+            .unwrap_or("remote operation failed");
+        diagnostic(
+            json,
+            &crate::error::CodedError::from_wire(code.clone(), message).into(),
+        );
+    } else if let Some(reason) = &job.output_loss_reason {
+        eprintln!("[xrun] {reason}");
     }
 }
 pub(super) fn require_linux() -> Result<()> {
@@ -40,7 +60,9 @@ pub(super) async fn session(id: &Identity, target: &str) -> Result<Session> {
 }
 pub(super) async fn response(ws: &mut Ws) -> Result<Data> {
     match net::receive::<Data>(ws).await? {
-        Data::Error { code, message } => bail!(crate::error::CodedError::from_wire(code, message)),
+        Data::Error { code, message, .. } => {
+            bail!(crate::error::CodedError::from_wire(code, message))
+        }
         value => Ok(value),
     }
 }

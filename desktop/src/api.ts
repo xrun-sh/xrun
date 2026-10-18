@@ -70,6 +70,7 @@ export interface Settings {
 }
 
 export interface Device {
+  execution_path?: string | null;
   device_id: string;
   name: string;
   online: boolean;
@@ -128,6 +129,7 @@ export interface JobCommon {
   attachments: Attachment[];
 }
 export interface CommandParams {
+  merge_stderr: boolean;
   program: string;
   args: string[];
   cwd: string;
@@ -383,6 +385,7 @@ async function withDeploymentProgress<T>(
   }
 }
 export interface RemoteCommand {
+  merge_stderr: boolean;
   request_id: string;
   script: string;
   shell: string;

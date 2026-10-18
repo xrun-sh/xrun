@@ -1,6 +1,6 @@
 //! Job listing, waiting, logs and cancellation commands.
 use crate::error::ErrorCode;
-use crate::{config::Identity, net, protocol::*};
+use crate::{config::Identity, protocol::*};
 use anyhow::{Result, bail};
 use std::time::Duration;
 
@@ -94,77 +94,7 @@ pub(super) async fn run(
                     return Ok(2);
                 }
             };
-            let deadline =
-                (timeout != 0).then(|| tokio::time::Instant::now() + Duration::from_secs(timeout));
-            let result = if let Some(deadline) = deadline {
-                match tokio::time::timeout_at(deadline, wait(id, target, &job)).await {
-                    Ok(r) => r,
-                    Err(_) => {
-                        diagnostic(
-                            json,
-                            &anyhow::anyhow!(ErrorCode::WaitTimeout.error(
-                                "waiting for task timed out; query jobs/logs for its result"
-                            )),
-                        );
-                        return Ok(75);
-                    }
-                }
-            } else {
-                wait(id, target, &job).await
-            };
-            match result {
-                Ok(job) => {
-                    let (logs, logs_error) = if tail == 0 || job.kind() != JobKind::Exec {
-                        (vec![], None)
-                    } else {
-                        let read = collect_logs(id, target, &job.job_id, 0, tail);
-                        let result = if let Some(deadline) = deadline {
-                            match tokio::time::timeout_at(deadline, read).await {
-                                Ok(result) => result,
-                                Err(_) => Err(anyhow::anyhow!(
-                                    ErrorCode::WaitTimeout
-                                        .error("task finished; reading its output timed out")
-                                )),
-                            }
-                        } else {
-                            read.await
-                        };
-                        match result {
-                            Ok((logs, state)) => (logs, log_error(&state)),
-                            Err(e) => (vec![], Some(e.to_string())),
-                        }
-                    };
-                    if json {
-                        println!(
-                            "{}",
-                            serde_json::json!({"job":job,"logs":logs,"logs_error":logs_error})
-                        );
-                    } else {
-                        output(&logs)?;
-                        if let Some(e) = &logs_error {
-                            eprintln!("[xrun] {e}")
-                        }
-                        if let Some(e) = job
-                            .error_message
-                            .as_ref()
-                            .or(job.output_loss_reason.as_ref())
-                        {
-                            eprintln!("[xrun] {e}")
-                        }
-                    }
-                    Ok(job_code(&job))
-                }
-                Err(e) => {
-                    diagnostic(json, &e);
-                    Ok(
-                        if net::explicit(&e) && !crate::error::is(&e, ErrorCode::DeviceOffline) {
-                            125
-                        } else {
-                            75
-                        },
-                    )
-                }
-            }
+            super::wait::run(id, target, &job, timeout, tail, json).await
         }
         Remote::Logs {
             id: job,

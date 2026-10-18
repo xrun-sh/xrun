@@ -131,6 +131,7 @@ mod tests {
             },
             "hash".into(),
             JobDetails::Exec(CommandParams {
+                merge_stderr: false,
                 program: "echo".into(),
                 args: vec!["hello".into()],
                 cwd: "/tmp".into(),

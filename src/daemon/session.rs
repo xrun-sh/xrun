@@ -56,8 +56,12 @@ async fn serve_socket_policy(
                 return Box::pin(channel_gateway(rt.clone(),&mut ws, id.clone(),source,protocol,certificate.clone())).await;
             }
             if matches!(purpose, secure::Purpose::State) {
+                let mut device = network::local_device(&id, rt.cwd()?.to_string_lossy().into())?;
+                if rt.allow(&source).is_ok() {
+                    device.execution_path = Some(rt.config()?.execution_path());
+                }
                 let state = network::PeerState {
-                    device: network::local_device(&id, rt.cwd()?.to_string_lossy().into())?,
+                    device,
                     ack: ReceiptAck::create(&id, &network::current(&id)?)?,
                     lan:crate::lan::local(),
                 };

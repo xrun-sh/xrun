@@ -78,7 +78,9 @@ pub(super) async fn identity() -> Result<Identity> {
 }
 pub(super) async fn response(session: &mut Session) -> Result<Data> {
     match net::receive(&mut session.ws).await? {
-        Data::Error { code, message } => bail!(crate::error::CodedError::from_wire(code, message)),
+        Data::Error { code, message, .. } => {
+            bail!(crate::error::CodedError::from_wire(code, message))
+        }
         value => Ok(value),
     }
 }

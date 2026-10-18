@@ -51,6 +51,8 @@ test("remote commands target immutable IDs, deduplicate clicks, and render outpu
     }),
   });
   const dialog = await openCommand(devices[0].name);
+  fireEvent.click(within(dialog).getByText("执行选项"));
+  fireEvent.click(within(dialog).getByLabelText("将错误输出合并到标准输出"));
   fireEvent.change(within(dialog).getByLabelText("命令"), {
     target: { value: "Get-Date" },
   });
@@ -67,6 +69,7 @@ test("remote commands target immutable IDs, deduplicate clicks, and render outpu
     shell: "powershell",
     cwd: null,
     timeout: 1800,
+    merge_stderr: true,
   });
   expect((submitted.args.command as { request_id: string }).request_id).toMatch(
     /^[0-9a-f-]{36}$/,

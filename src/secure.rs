@@ -425,7 +425,7 @@ struct RosterReply {
 }
 async fn receive_exchange<T: serde::de::DeserializeOwned>(ws: &mut Ws) -> Result<T> {
     let value: serde_json::Value = net::receive(ws).await?;
-    if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone()) {
+    if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
         bail!(crate::error::CodedError::from_wire(code, message));
     }
     Ok(serde_json::from_value(value)?)

@@ -276,7 +276,7 @@ async fn desktop_commands_survive_reopening_without_reexecution_and_reject_datab
     } else {
         "printf 'once\n' >> invocations.txt\nprintf 'hello-desktop\n'\n"
     };
-    let command = json!({"request_id":request_id,"script":script,"shell":if cfg!(windows){"cmd"}else{"sh"},
+    let command = json!({"merge_stderr":false,"request_id":request_id,"script":script,"shell":if cfg!(windows){"cmd"}else{"sh"},
         "cwd":directory,"timeout":30});
     let first = operation(
         &lab.source,
@@ -370,7 +370,7 @@ async fn desktop_commands_survive_reopening_without_reexecution_and_reject_datab
 async fn desktop_cancel_acknowledges_the_remote_task() -> Result<()> {
     let mut lab = Lab::new().await?;
     let target = &lab.target_identity.device_id;
-    let command = json!({"request_id":uuid::Uuid::new_v4().to_string(),
+    let command = json!({"merge_stderr":false,"request_id":uuid::Uuid::new_v4().to_string(),
         "script":if cfg!(windows){"Start-Sleep -Seconds 60"}else{"sleep 60"},
         "shell":if cfg!(windows){"powershell"}else{"sh"},"cwd":Value::Null,"timeout":90});
     let submitted = operation(

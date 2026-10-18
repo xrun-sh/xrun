@@ -217,7 +217,7 @@ pub(super) async fn join_with_key(
             )
             .await?;
             let value: serde_json::Value = net::receive(&mut ws).await?;
-            if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone()) {
+            if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
                 bail!(crate::error::CodedError::from_wire(code, message))
             }
             let pair = serde_json::from_value::<PairResponse>(value)?.accept()?;
@@ -324,7 +324,8 @@ pub(crate) async fn renew(id: &mut Identity) -> Result<()> {
                     )
                     .await?;
                     let value: serde_json::Value = net::receive(&mut ws).await?;
-                    if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone())
+                    if let Ok(Data::Error { code, message, .. }) =
+                        serde_json::from_value(value.clone())
                     {
                         bail!(crate::error::CodedError::from_wire(code, message))
                     }

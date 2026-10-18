@@ -355,8 +355,7 @@ export function SettingsPage({
             <input
               id="concurrency"
               type="number"
-              min="1"
-              max="64"
+              min="0"
               required
               disabled={disabled}
               value={concurrency}

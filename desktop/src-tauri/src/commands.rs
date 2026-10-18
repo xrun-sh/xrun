@@ -830,7 +830,7 @@ pub(crate) mod tests {
                 let bytes = std::fs::read(config::device_dir()?.join("daemon.toml"))?;
                 for invalid in [
                     json!({"default_cwd":root.join("missing"),"max_concurrent_jobs":7,"path":null}),
-                    json!({"default_cwd":root,"max_concurrent_jobs":0,"path":null}),
+                    json!({"default_cwd":root,"max_concurrent_jobs":-1,"path":null}),
                     json!({"default_cwd":root,"max_concurrent_jobs":7,"path":"bad\u{0000}path"}),
                     json!({"default_cwd":root,"max_concurrent_jobs":7,"path":null,"allow_all":true}),
                 ] {
@@ -843,6 +843,18 @@ pub(crate) mod tests {
                     );
                 }
                 assert!(app.state::<Desktop>().error.lock().unwrap().is_some());
+                for limit in [0, 128] {
+                    let execution =
+                        json!({"default_cwd":null,"max_concurrent_jobs":limit,"path":null});
+                    assert_eq!(
+                        invoke(&window, "save_settings", json!({"execution":execution})),
+                        Ok(Value::Null)
+                    );
+                    assert_eq!(
+                        invoke(&window, "settings", json!({})).unwrap()["execution"]["max_concurrent_jobs"],
+                        limit
+                    );
+                }
                 let defaults = json!({"default_cwd":null,"max_concurrent_jobs":4,"path":null});
                 assert_eq!(
                     invoke(&window, "save_settings", json!({"execution":defaults})),
@@ -1236,6 +1248,7 @@ pub(crate) mod tests {
                         leftover_possible: false,
                         process: None,
                         details: JobDetails::Exec(CommandParams {
+                            merge_stderr: false,
                             program: "program".into(),
                             args: vec!["argument".into()],
                             cwd: config::home_dir()?.to_string_lossy().into(),

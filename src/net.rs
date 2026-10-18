@@ -123,7 +123,7 @@ pub async fn websocket_at(address: &str, path: &str, tls: Arc<rustls::ClientConf
         }
         Err(tokio_tungstenite::tungstenite::Error::Http(r)) => {
             if let Some(body) = r.body()
-                && let Ok(Data::Error { code, message }) = serde_json::from_slice(body)
+                && let Ok(Data::Error { code, message, .. }) = serde_json::from_slice(body)
             {
                 bail!(crate::error::CodedError::from_wire(code, message))
             }
@@ -250,7 +250,7 @@ async fn receive_body<W: AsyncWrite + Unpin>(
             }
             Message::Text(text) => match serde_json::from_str::<Data>(&text)? {
                 Data::End => break,
-                Data::Error { code, message } => {
+                Data::Error { code, message, .. } => {
                     bail!(crate::error::CodedError::from_wire(code, message))
                 }
                 _ => bail!(ErrorCode::InvalidBody.error("expected end")),

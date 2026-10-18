@@ -30,6 +30,7 @@ async fn wait_for_admission(lab: &Lab, request: &str) -> Result<()> {
 }
 fn execution(lab: &Lab, program: &Path, args: &[&str]) -> Result<Execution> {
     Ok(Execution {
+        merge_stderr: false,
         request_id: uuid::Uuid::new_v4().to_string(),
         db_id: store(lab)?.db_id,
         program: program.to_string_lossy().into(),
@@ -320,7 +321,16 @@ async fn daemon_deduplicates_before_capacity_and_refuses_changed_execution_field
             .by_request(&lab.source_identity.device_id, &busy.request_id)?
             .is_none()
     );
-    for field in ["program", "args", "cwd", "env", "timeout", "shell", "input"] {
+    for field in [
+        "program",
+        "args",
+        "cwd",
+        "env",
+        "timeout",
+        "shell",
+        "input",
+        "merge_stderr",
+    ] {
         let mut changed = base.clone();
         let mut input = vec![];
         match field {
@@ -332,6 +342,7 @@ async fn daemon_deduplicates_before_capacity_and_refuses_changed_execution_field
             }
             "timeout" => changed.timeout += 1,
             "shell" => changed.shell = Some("sh".into()),
+            "merge_stderr" => changed.merge_stderr = true,
             "input" => {
                 input = b"different input".to_vec();
                 changed.input_size = input.len() as u64;

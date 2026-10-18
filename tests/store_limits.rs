@@ -35,6 +35,7 @@ impl Store {
             leftover_possible: false,
             process: None,
             details: JobDetails::Exec(CommandParams {
+                merge_stderr: false,
                 program: "test-program".into(),
                 args: vec![],
                 cwd: String::new(),

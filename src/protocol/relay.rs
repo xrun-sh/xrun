@@ -309,7 +309,7 @@ pub enum RelayMessage {
 }
 impl RelayMessage {
     pub(crate) fn error(error: &anyhow::Error) -> Self {
-        let Data::Error { code, message } = Data::error(error) else {
+        let Data::Error { code, message, .. } = Data::error(error) else {
             unreachable!()
         };
         Self::Error { code, message }

@@ -8,6 +8,8 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CommandRequest {
+    /// Merge child stderr into stdout at the target.
+    pub merge_stderr: bool,
     /// Caller-generated stable submission ID.
     pub request_id: String,
     /// UTF-8 script passed to the selected interpreter without local shell parsing.
@@ -57,6 +59,7 @@ pub async fn submit(target: &str, command: CommandRequest) -> Result<Job> {
     let mut session = Session::open(&id, &target).await?;
     let input = command.script.into_bytes();
     let execution = Execution {
+        merge_stderr: command.merge_stderr,
         request_id: command.request_id,
         db_id: session.db_id.clone(),
         program: String::new(),

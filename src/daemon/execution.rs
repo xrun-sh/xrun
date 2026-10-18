@@ -27,10 +27,33 @@ fn short_id() -> String {
         .map(|b| ABC[(b & 31) as usize] as char)
         .collect()
 }
-pub(super) fn check_capacity(rt: &Runtime) -> Result<()> {
+pub(super) fn check_capacity(rt: &Runtime, source: &str) -> Result<()> {
+    let limit = rt.config()?.max_concurrent_jobs;
+    if limit == 0 {
+        return Ok(());
+    }
     let jobs = rt.store.active_count()?;
-    if jobs >= rt.config()?.max_concurrent_jobs {
-        bail!(ErrorCode::DeviceBusy.error("job capacity reached"))
+    if jobs >= limit {
+        let owned = rt.store.active_commands(source)?;
+        let owned = owned
+            .iter()
+            .filter(|job| matches!(job.kind(), JobKind::Exec | JobKind::StreamExec))
+            .map(|job| {
+                let label = job
+                    .details
+                    .command()
+                    .and_then(|params| params.shell.as_ref())
+                    .map(|shell| format!("{shell} script"))
+                    .unwrap_or_else(|| job.details.label());
+                let label: String = label.chars().take(80).collect();
+                format!("{} ({label})", job.job_id)
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        bail!(ErrorCode::DeviceBusy.error(format!(
+            "job capacity reached: {jobs} active commands, limit {limit}; your active commands: {}",
+            if owned.is_empty() { "none" } else { &owned }
+        )))
     }
     Ok(())
 }
@@ -106,7 +129,7 @@ pub(super) fn submit(
         }
         return Ok(job);
     }
-    check_capacity(&rt)?;
+    check_capacity(&rt, source)?;
     let mut id = short_id();
     while rt.store.get(&id)?.is_some() {
         id = short_id()
@@ -120,6 +143,7 @@ pub(super) fn submit(
         },
         hash,
         JobDetails::Exec(CommandParams {
+            merge_stderr: request.merge_stderr,
             program: request.program.clone(),
             args: request.args.clone(),
             cwd: request.cwd.clone(),
@@ -262,7 +286,15 @@ async fn execute(
                 .finish_sync(&launching, outcome(JobState::Canceled))?;
             return Ok(None);
         }
-        let child = crate::process::spawn(&resolved, &args, &cwd, &env, &launching, cmd_script)?;
+        let child = crate::process::spawn(
+            &resolved,
+            &args,
+            &cwd,
+            &env,
+            &launching,
+            cmd_script,
+            request.merge_stderr,
+        )?;
         // Even recording the PID can fail after the process has made changes.
         started.store(true, Ordering::SeqCst);
         let process = ProcessIdentity {
@@ -504,6 +536,7 @@ mod tests {
             leftover_possible: false,
             process: None,
             details: JobDetails::Exec(CommandParams {
+                merge_stderr: false,
                 program: "test".into(),
                 args: vec![],
                 cwd: "/".into(),
@@ -670,6 +703,7 @@ mod tests {
                 });
                 for stopping in [false, true] {
                     let request = Execution {
+                        merge_stderr: false,
                         request_id: format!("before-poll-{stopping}"),
                         db_id: rt.store.db_id.clone(),
                         program: std::env::current_exe()?.to_string_lossy().into(),

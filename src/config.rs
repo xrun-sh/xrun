@@ -119,6 +119,19 @@ impl Default for DaemonConfig {
     }
 }
 impl DaemonConfig {
+    pub(crate) fn execution_path(&self) -> String {
+        self.env
+            .iter()
+            .find(|(key, _)| {
+                if cfg!(windows) {
+                    key.eq_ignore_ascii_case("PATH")
+                } else {
+                    key.as_str() == "PATH"
+                }
+            })
+            .map(|(_, value)| value.clone())
+            .unwrap_or_else(|| std::env::var("PATH").unwrap_or_default())
+    }
     pub fn check_access(&self, source: &str) -> Result<()> {
         if self.remote_access_paused {
             bail!(ErrorCode::AccessPaused.error("remote access is paused on this device"))
@@ -181,9 +194,6 @@ impl DaemonConfig {
             bail!(ErrorCode::InvalidConfig.error(
                 "attachment_retention_days must be 0..3650 (0 keeps attachments indefinitely)"
             ))
-        }
-        if !(1..=64).contains(&self.max_concurrent_jobs) {
-            bail!(ErrorCode::InvalidConfig.error("max_concurrent_jobs must be 1..64"))
         }
         if self.default_cwd.as_ref().is_some_and(|p| !p.is_absolute()) {
             bail!(ErrorCode::InvalidConfig.error("default_cwd must be absolute"))
@@ -596,14 +606,24 @@ mod tests {
         assert_eq!(cfg.allow_from, ["source-a", "source-b"]);
         assert_eq!(cfg.max_concurrent_jobs, 8);
         assert_eq!(cfg.env["OTHER_SETTING"], "preserve-me");
+        for limit in [0, 128] {
+            update_daemon_config(dir.path(), |cfg| {
+                cfg.max_concurrent_jobs = limit;
+                Ok(())
+            })?;
+            assert_eq!(
+                read::<DaemonConfig>(&dir.path().join("daemon.toml"))?.max_concurrent_jobs,
+                limit
+            );
+        }
         let failed = update_daemon_config(dir.path(), |cfg| {
-            cfg.max_concurrent_jobs = 0;
+            cfg.default_cwd = Some(PathBuf::from("relative"));
             Ok(())
         });
         assert!(failed.is_err());
         assert_eq!(
             read::<DaemonConfig>(&dir.path().join("daemon.toml"))?.max_concurrent_jobs,
-            8
+            128
         );
         Ok(())
     }

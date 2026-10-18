@@ -307,6 +307,34 @@ pub fn wire(error: &anyhow::Error) -> (String, String) {
     (code.as_str().to_string(), message)
 }
 
+/// Actionable guidance shared by human diagnostics and structured error responses.
+pub fn hint(code: &ErrorCode) -> Option<&'static str> {
+    Some(match code {
+        ErrorCode::ParentNotFound => "Add --mkdir to push to create missing parent directories.",
+        ErrorCode::ProgramNotFound => concat!(
+            "Check the target service PATH with xrun <DEVICE> info --json, ",
+            "set [env].PATH in its daemon.toml, or use an absolute program path. ",
+            "For shell syntax, use --script sh on Unix or --script powershell on Windows; see xrun help run."
+        ),
+        ErrorCode::IsDirectory => {
+            "Use a complete file destination, such as <directory>/<remote-file-name>; push/pull transfer one file."
+        }
+        ErrorCode::DeviceBusy => concat!(
+            "Query xrun <DEVICE> jobs --running and logs <JOB>. For command capacity, ",
+            "increase max_concurrent_jobs on the target or set it to 0 for unlimited commands. ",
+            "File and forwarding limits are separate."
+        ),
+        ErrorCode::WaitTimeout => {
+            "Read the returned job snapshot if available; query the same job with jobs/logs or wait again. Do not submit the command again."
+        }
+        ErrorCode::SourceNotAllowed => concat!(
+            "Run xrun allow-from <SOURCE> on the target device. ",
+            "Pull uses the same source-to-target permission as execution; reverse permission is not required."
+        ),
+        _ => return None,
+    })
+}
+
 /// Assigns path-related semantics only at an explicit user file boundary.
 pub(crate) fn file_io(error: std::io::Error) -> CodedError {
     let code = match error.kind() {

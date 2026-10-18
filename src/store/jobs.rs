@@ -259,6 +259,17 @@ impl Database {
             )?
             .try_into()?)
     }
+    pub(super) fn active_commands(&self, source: &str) -> Result<Vec<Job>> {
+        self.db
+            .prepare(&format!(
+                "SELECT {JOB_COLUMNS} FROM jobs WHERE source_device_id=?1
+             AND kind IN ('exec','stream_exec') AND state IN ('accepted','running','interrupted')
+             ORDER BY created_at_ms DESC,job_id DESC LIMIT 8"
+            ))?
+            .query_map([source], |row| read_job(row, 0))?
+            .map(|job| self.hydrate(job?))
+            .collect()
+    }
     pub(super) fn page(
         &self,
         source: &str,
@@ -533,6 +544,7 @@ mod tests {
             leftover_possible: false,
             process: None,
             details: JobDetails::Exec(CommandParams {
+                merge_stderr: false,
                 program: "test".into(),
                 args: vec![],
                 cwd: "/".into(),

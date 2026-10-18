@@ -196,7 +196,7 @@ fn admit(rt: &Runtime, source: &str, generation: u64, request: &Request) -> Resu
                 .context(ErrorCode::DeviceBusy.error("too many forwarded connections"))?,
         ),
         Request::StreamExec { .. } => {
-            super::execution::check_capacity(rt)?;
+            super::execution::check_capacity(rt, source)?;
             None
         }
         _ => unreachable!(),

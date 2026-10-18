@@ -90,6 +90,10 @@ impl JobStore {
     pub fn active_count(&self) -> Result<usize> {
         self.worker.call(|db| db.active_count())
     }
+    pub(crate) fn active_commands(&self, source: &str) -> Result<Vec<Job>> {
+        let source = source.to_owned();
+        self.worker.call(move |db| db.active_commands(&source))
+    }
     pub fn page(
         &self,
         source: &str,

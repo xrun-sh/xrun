@@ -118,6 +118,7 @@ pub fn spawn(
     env: &BTreeMap<String, String>,
     _job_id: &str,
     _cmd_script: bool,
+    merge_stderr: bool,
 ) -> Result<ManagedChild> {
     use std::os::unix::process::CommandExt;
     let mut cmd = tokio::process::Command::new(path);
@@ -132,14 +133,23 @@ pub fn spawn(
         .stderr(std::process::Stdio::piped())
         .kill_on_drop(true);
     cmd.as_std_mut().process_group(0);
+    let merged_output = if merge_stderr {
+        let (writer, reader) = tokio::net::unix::pipe::pipe()?;
+        let writer = writer.into_blocking_fd()?;
+        cmd.stdout(std::process::Stdio::from(writer.try_clone()?));
+        cmd.stderr(std::process::Stdio::from(writer));
+        Some(Box::new(reader) as Output)
+    } else {
+        None
+    };
     let mut child = cmd.spawn()?;
     Ok(ManagedChild {
         pid: child
             .id()
             .ok_or_else(|| anyhow::anyhow!("child PID missing"))?,
         stdin: Some(Box::new(child.stdin.take().unwrap())),
-        stdout: Some(Box::new(child.stdout.take().unwrap())),
-        stderr: Some(Box::new(child.stderr.take().unwrap())),
+        stdout: merged_output.or_else(|| child.stdout.take().map(|pipe| Box::new(pipe) as Output)),
+        stderr: child.stderr.take().map(|pipe| Box::new(pipe) as Output),
         child,
         reaped: false,
     })
@@ -153,13 +163,14 @@ pub fn spawn(
     env: &BTreeMap<String, String>,
     job_id: &str,
     cmd_script: bool,
+    merge_stderr: bool,
 ) -> Result<ManagedChild> {
-    let native = windows::spawn(path, args, cwd, env, job_id, cmd_script)?;
+    let native = windows::spawn(path, args, cwd, env, job_id, cmd_script, merge_stderr)?;
     Ok(ManagedChild {
         pid: native.pid,
         stdin: Some(Box::new(native.stdin)),
         stdout: Some(Box::new(native.stdout)),
-        stderr: Some(Box::new(native.stderr)),
+        stderr: native.stderr.map(|pipe| Box::new(pipe) as Output),
         child: native.child,
     })
 }
@@ -296,7 +307,7 @@ mod windows {
         pub(super) pid: u32,
         pub(super) stdin: tokio::fs::File,
         pub(super) stdout: tokio::fs::File,
-        pub(super) stderr: tokio::fs::File,
+        pub(super) stderr: Option<tokio::fs::File>,
         pub(super) child: NativeChild,
     }
     fn wide(s: &OsStr) -> Vec<u16> {
@@ -384,6 +395,7 @@ mod windows {
         env: &BTreeMap<String, String>,
         _job_id: &str,
         cmd_script: bool,
+        merge_stderr: bool,
     ) -> Result<Spawned> {
         let app = wide(path.as_os_str());
         let cwd_w = wide(cwd.as_os_str());
@@ -429,8 +441,16 @@ mod windows {
         let environment = environment(&env)?;
         let (stdin_read, stdin_write) = unsafe { pipe()? };
         let (stdout_read, stdout_write) = unsafe { pipe()? };
-        let (stderr_read, stderr_write) = unsafe { pipe()? };
-        for handle in [&stdin_write, &stdout_read, &stderr_read] {
+        let (stderr_read, stderr_write) = if merge_stderr {
+            (None, None)
+        } else {
+            let (reader, writer) = unsafe { pipe()? };
+            (Some(reader), Some(writer))
+        };
+        for handle in [&stdin_write, &stdout_read]
+            .into_iter()
+            .chain(stderr_read.iter())
+        {
             if unsafe { SetHandleInformation(handle.0, HANDLE_FLAG_INHERIT, 0) } == 0 {
                 return Err(std::io::Error::last_os_error().into());
             }
@@ -459,7 +479,10 @@ mod windows {
             return Err(std::io::Error::last_os_error().into());
         }
         let jobs_list = [job.0];
-        let handles = [stdin_read.0, stdout_write.0, stderr_write.0];
+        let mut handles = vec![stdin_read.0, stdout_write.0];
+        if let Some(stderr) = &stderr_write {
+            handles.push(stderr.0);
+        }
         let setup = unsafe {
             UpdateProcThreadAttribute(
                 list,
@@ -475,7 +498,7 @@ mod windows {
                     0,
                     PROC_THREAD_ATTRIBUTE_HANDLE_LIST as usize,
                     handles.as_ptr() as *const _,
-                    size_of::<[HANDLE; 3]>(),
+                    handles.len() * size_of::<HANDLE>(),
                     null_mut(),
                     null(),
                 ) != 0
@@ -491,7 +514,7 @@ mod windows {
         startup.StartupInfo.dwFlags = STARTF_USESTDHANDLES;
         startup.StartupInfo.hStdInput = stdin_read.0;
         startup.StartupInfo.hStdOutput = stdout_write.0;
-        startup.StartupInfo.hStdError = stderr_write.0;
+        startup.StartupInfo.hStdError = stderr_write.as_ref().unwrap_or(&stdout_write).0;
         startup.lpAttributeList = list;
         let mut info = PROCESS_INFORMATION::default();
         let ok = unsafe {
@@ -545,7 +568,7 @@ mod windows {
             pid: info.dwProcessId,
             stdin: tokio::fs::File::from_std(stdin_write.into_file()),
             stdout: tokio::fs::File::from_std(stdout_read.into_file()),
-            stderr: tokio::fs::File::from_std(stderr_read.into_file()),
+            stderr: stderr_read.map(|pipe| tokio::fs::File::from_std(pipe.into_file())),
             child,
         })
     }

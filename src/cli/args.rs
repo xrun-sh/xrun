@@ -22,6 +22,7 @@ use std::path::PathBuf;
         "\n",
         "Examples:\n",
         "  xrun ubuntu -C /home/user/demo -- cargo test\n",
+        "  xrun ubuntu --script sh < ./build.sh\n",
         "  xrun ubuntu push ./config.json /home/user/demo/config.json\n",
         "  xrun allow-from macbook                 Run on the device macbook will control\n",
         "\n",
@@ -47,6 +48,9 @@ pub(super) enum Local {
         "Full documentation: xrun doc quickstart"
     ))]
     Connect {
+        /// Explicitly copy this shell's PATH into the local service configuration
+        #[arg(long)]
+        path_from_shell: bool,
         /// Complete deployment link or one-use xrun:// invitation
         link: String,
         /// Eight-character access code when the first argument is a relay host
@@ -70,6 +74,9 @@ pub(super) enum Local {
     )
     )]
     Up {
+        /// Explicitly copy this shell's PATH into the local service configuration
+        #[arg(long)]
+        path_from_shell: bool,
         /// Complete HTTPS relay address or xrun-relay:// deployment link
         #[arg(long)]
         relay: String,
@@ -102,6 +109,9 @@ pub(super) enum Local {
     )
     )]
     Join {
+        /// Explicitly copy this shell's PATH into the local service configuration
+        #[arg(long)]
+        path_from_shell: bool,
         /// Complete xrun:// member invitation
         link: String,
         /// Name for this device
@@ -352,7 +362,11 @@ pub(super) enum RelayProvider {
 #[derive(Subcommand)]
 pub(super) enum DaemonCommand {
     /// Install and start the current user's daemon service
-    Install,
+    Install {
+        /// Explicitly copy this shell's PATH into the local service configuration
+        #[arg(long)]
+        path_from_shell: bool,
+    },
     /// Remove the service registration, retaining local data
     Uninstall,
     /// Start the installed daemon service
@@ -458,7 +472,8 @@ pub(super) enum Remote {
     #[command(
         after_help = concat!(
         "Example: xrun ubuntu wait ABC123 --timeout 60\n",
-        "Exit 75 means the result is unconfirmed. A wait timeout does not cancel the job.\n",
+        "A timeout does not cancel the job. Up to two more seconds fetch a real snapshot and log tail.\n",
+        "Exit 75 means no final result is confirmed; --json includes wait_timed_out and job (null if unavailable).\n",
         "Full documentation: xrun doc jobs"
     )
     )]
@@ -586,6 +601,9 @@ pub(super) enum Remote {
 }
 #[derive(Args)]
 pub(super) struct Execute {
+    /// Merge stderr into stdout at the target before capturing output
+    #[arg(long)]
+    pub(super) merge_stderr: bool,
     /// Absolute remote working directory (daemon's default if omitted)
     #[arg(short = 'C')]
     pub(super) cwd: Option<String>,

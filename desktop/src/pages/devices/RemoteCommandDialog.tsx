@@ -43,6 +43,7 @@ export function RemoteCommandDialog({
   );
   const [cwd, setCwd] = useState("");
   const [timeout, setTimeoutSeconds] = useState(1800);
+  const [mergeStderr, setMergeStderr] = useState(false);
   const [requestId, setRequestId] = useState<string | null>(null);
   const [job, setJob] = useState<CommandJob | null>(null);
   const [receipts, setReceipts] = useState<RemoteReceipt[]>([]);
@@ -151,6 +152,7 @@ export function RemoteCommandDialog({
             shell,
             cwd: cwd.trim() || null,
             timeout,
+            merge_stderr: mergeStderr,
           });
         } catch (error) {
           if (
@@ -289,6 +291,15 @@ export function RemoteCommandDialog({
           />
           <details className="remote-options">
             <summary>{t("remote.options")}</summary>
+            <label>
+              <input
+                type="checkbox"
+                checked={mergeStderr}
+                disabled={busy}
+                onChange={(event) => setMergeStderr(event.target.checked)}
+              />
+              {t("remote.mergeStderr")}
+            </label>
             <label htmlFor="remote-shell">{t("remote.shell")}</label>
             <Select
               id="remote-shell"

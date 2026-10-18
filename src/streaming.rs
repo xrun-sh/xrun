@@ -102,7 +102,10 @@ pub(crate) async fn serve(
     let receiver_exit = exit_sent.clone();
     let mut stdin = child.stdin.take();
     let stdout = child.stdout.take().context("missing child stdout")?;
-    let stderr = child.stderr.take().context("missing child stderr")?;
+    let stderr = child
+        .stderr
+        .take()
+        .unwrap_or_else(|| Box::new(tokio::io::empty()));
     let input_tx = tx.clone();
     let input_counts = counts.clone();
     let receive = async move {
@@ -333,7 +336,7 @@ pub(crate) async fn client(ws: &mut Ws) -> Result<StreamResult> {
                         let _ = tx.try_send(frame(&Data::StreamExitAck)?);
                         return Ok::<_, anyhow::Error>(result);
                     }
-                    Data::Error { code, message } => {
+                    Data::Error { code, message, .. } => {
                         bail!(crate::error::CodedError::from_wire(code, message))
                     }
                     _ => bail!(ErrorCode::InvalidMessage.error("expected stream result")),

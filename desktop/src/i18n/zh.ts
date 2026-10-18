@@ -425,7 +425,7 @@ export const zh = {
   "settings.cwdHint":
     "其他设备未指定工作目录时，使用此目录。留空使用用户主目录。",
   "settings.concurrency": "同时运行的任务数",
-  "settings.concurrencyHint": "范围 1–64，仅影响新任务",
+  "settings.concurrencyHint": "0 表示不限制，正整数设置上限；仅影响新任务",
   "settings.pathTitle": "工具搜索路径（PATH）",
   "settings.path": "工具搜索路径",
   "settings.pathPlaceholder": "留空继承后台服务的 PATH",
@@ -624,6 +624,7 @@ export const zh = {
   "remote.direction": "本机 → 此设备，需对方允许本机访问。",
   "remote.script": "命令",
   "remote.options": "执行选项",
+  "remote.mergeStderr": "将错误输出合并到标准输出",
   "remote.shell": "解释器",
   "remote.cwd": "远程工作目录",
   "remote.defaultCwd": "使用对方默认目录",

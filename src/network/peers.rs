@@ -30,6 +30,7 @@ pub struct PeerState {
 pub(crate) fn local_device(id: &Identity, cwd: String) -> Result<Device> {
     let roster = current(id)?;
     Ok(Device {
+        execution_path: None,
         device_id: id.device_id.clone(),
         name: id.name.clone(),
         online: true,
@@ -75,7 +76,7 @@ pub(super) async fn peer_state(
             }
         };
         let value: serde_json::Value = net::receive(&mut ws).await?;
-        if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone()) {
+        if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
             bail!(crate::error::CodedError::from_wire(code, message))
         }
         let mut state: PeerState = serde_json::from_value(value)?;
@@ -160,6 +161,7 @@ pub(super) async fn states_for(
 fn listed_device(roster: &SignedRoster, member: &Member, info: Option<&Device>) -> Device {
     let info = info.filter(|_| !member.revoked);
     Device {
+        execution_path: info.and_then(|d| d.execution_path.clone()),
         device_id: member.device_id.clone(),
         name: member.name.clone(),
         online: info.is_some(),

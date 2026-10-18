@@ -51,7 +51,7 @@ export async function fixture(
       joined,
       device_id: "self",
       name: "mac1",
-      version: "0.1.0-rc.12",
+      version: "0.1.0-rc.13",
       daemon_running: true,
       daemon_connected: true,
       remote_access_paused: false,
@@ -367,6 +367,7 @@ export function commandJob(
     kind: "exec",
     output_complete: true,
     params: {
+      merge_stderr: false,
       program: "echo",
       args: ['<img id="command-injected" src=x>'],
       cwd: "/repo",

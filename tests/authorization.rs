@@ -62,7 +62,7 @@ async fn explicit_reload_reads_equal_metadata_edits_and_preserves_failure_codes(
     control::refresh_access(&directory).await?;
     let mut ws = established(&lab).await?;
     let mut invalid: config::DaemonConfig = config::read(&path)?;
-    invalid.max_concurrent_jobs = 0;
+    invalid.membership_lease_minutes = 0;
     config::write(&path, &invalid)?;
     let failure = control::refresh_access(&directory).await.unwrap_err();
     assert_eq!(error::code(&failure), Some(ErrorCode::InvalidConfig));

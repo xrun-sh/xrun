@@ -65,6 +65,8 @@ pub struct Device {
     pub execution_user: Option<String>,
     /// Default working directory announced by the endpoint.
     pub default_cwd: Option<String>,
+    /// Target service PATH, disclosed only to callers allowed to operate it.
+    pub execution_path: Option<String>,
     /// Last peer observation in Unix milliseconds, if known.
     pub last_seen: Option<i64>,
     /// Last successful outgoing transport observed by this local caller.
@@ -111,6 +113,8 @@ pub struct Execution {
     pub timeout: u64,
     /// Explicit script interpreter, when executing a script.
     pub shell: Option<String>,
+    /// Merge stderr into the stdout pipe before launching the process.
+    pub merge_stderr: bool,
     /// Declared buffered stdin size in bytes.
     pub input_size: u64,
     /// Lowercase SHA-256 digest of the buffered stdin bytes.
@@ -119,6 +123,8 @@ pub struct Execution {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 /// Streaming execution intent whose lifetime is tied to the connection.
 pub struct StreamExecution {
+    /// Merge stderr into the stdout pipe before launching the process.
+    pub merge_stderr: bool,
     /// Executable name or path.
     pub program: String,
     /// Arguments passed as separate values without implicit shell parsing.
@@ -506,13 +512,22 @@ pub enum Data {
         code: String,
         /// Human-readable detail; changes do not define machine semantics.
         message: String,
+        /// Suggested next step for the caller, when known.
+        #[serde(skip_serializing_if = "Option::is_none")]
+        hint: Option<String>,
     },
 }
 impl Data {
     /// Convert an internal error to its wire response.
     pub fn error(error: &anyhow::Error) -> Self {
         let (code, message) = crate::error::wire(error);
-        Self::Error { code, message }
+        let hint = crate::error::hint(&crate::error::ErrorCode::from_wire(code.clone()))
+            .map(str::to_owned);
+        Self::Error {
+            code,
+            message,
+            hint,
+        }
     }
 }
 

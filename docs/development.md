@@ -271,7 +271,7 @@ Ordinary messages ignore unknown fields that can safely be ignored but reject mi
 | File transfers, streaming input, TCP forwarding | No fixed total size; 64 KiB chunks |
 | Screenshots | 64 MiB encoded, at most 32 million pixels |
 | Logs per job / total | 64 MiB / 1 GiB; finished-job logs retained for 7 days |
-| Concurrent commands | Default 4, configurable 1–64 |
+| Concurrent commands | Default 4; 0 disables the command-count limit, positive integers set a limit |
 | Concurrent files and screenshots | 8 per device |
 | Device-pair channels | 32 streams each, at most 3 idle channels |
 | Members / active invitations | 256 each |

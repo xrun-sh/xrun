@@ -55,6 +55,9 @@ pub(crate) enum LocalRequest {
     ReloadAccess {
         token: String,
     },
+    ExecutionPath {
+        token: String,
+    },
     Invite {
         token: String,
         version: String,
@@ -76,6 +79,9 @@ pub(crate) enum LocalResponse {
     Released,
     Stopped,
     AccessReloaded,
+    ExecutionPath {
+        path: String,
+    },
     Invitation {
         invitation: crate::client::Invitation,
     },
@@ -313,7 +319,7 @@ pub(crate) async fn stop(dir: &Path, generation: &str) -> Result<()> {
                 Ok(())
             }
             value => {
-                if let Ok(Data::Error { code, message }) = serde_json::from_value(value) {
+                if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value) {
                     bail!(crate::error::CodedError::from_wire(code, message));
                 }
                 bail!(ErrorCode::InvalidMessage.error("expected stop acknowledgement"));
@@ -373,7 +379,7 @@ async fn invitation_request(
         let mut ws = framed(open(&endpoint.address).await?, Role::Client).await;
         net::send(&mut ws, &request(endpoint.token)).await?;
         let value: serde_json::Value = net::receive(&mut ws).await?;
-        if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone()) {
+        if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
             bail!(crate::error::CodedError::from_wire(code, message));
         }
         Ok(serde_json::from_value(value)?)
@@ -394,12 +400,39 @@ pub(crate) async fn refresh_access(dir: &Path) -> Result<()> {
         )
         .await?;
         let value: serde_json::Value = net::receive(&mut ws).await?;
-        if let Ok(Data::Error { code, message }) = serde_json::from_value(value.clone()) {
+        if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
             bail!(crate::error::CodedError::from_wire(code, message));
         }
         match serde_json::from_value(value)? {
             LocalResponse::AccessReloaded => Ok(()),
             _ => bail!(ErrorCode::InvalidMessage.error("expected authorization acknowledgement")),
+        }
+    })
+    .await?
+}
+
+pub(crate) async fn execution_path(dir: &Path) -> Result<String> {
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let endpoint: Endpoint =
+            serde_json::from_slice(&std::fs::read(dir.join("daemon-ipc.json"))?)?;
+        if endpoint.version != VERSION || endpoint.protocol != PROTOCOL {
+            bail!(ErrorCode::VersionMismatch.error("restart the local daemon with this release"));
+        }
+        let mut ws = framed(open(&endpoint.address).await?, Role::Client).await;
+        net::send(
+            &mut ws,
+            &LocalRequest::ExecutionPath {
+                token: endpoint.token,
+            },
+        )
+        .await?;
+        let value: serde_json::Value = net::receive(&mut ws).await?;
+        if let Ok(Data::Error { code, message, .. }) = serde_json::from_value(value.clone()) {
+            bail!(crate::error::CodedError::from_wire(code, message));
+        }
+        match serde_json::from_value(value)? {
+            LocalResponse::ExecutionPath { path } => Ok(path),
+            _ => bail!(ErrorCode::InvalidMessage.error("expected service PATH")),
         }
     })
     .await?

@@ -56,7 +56,9 @@ fn ready(value: &Data, target: &str) -> Result<()> {
             device_id,
             ..
         } if device_id == target => ProtocolRange::CURRENT.confirm(*protocol, *selected_protocol),
-        Data::Error { code, message } => bail!(crate::error::CodedError::from_wire(code, message)),
+        Data::Error { code, message, .. } => {
+            bail!(crate::error::CodedError::from_wire(code, message))
+        }
         _ => bail!(ErrorCode::DeviceMismatch.error("invalid target acknowledgement")),
     }
 }
@@ -116,7 +118,7 @@ impl Pool {
                 device_id,
                 protocol,
             } if device_id == target => ProtocolRange::require(protocol)?,
-            Data::Error { code, message } => {
+            Data::Error { code, message, .. } => {
                 bail!(crate::error::CodedError::from_wire(code, message))
             }
             _ => bail!(
@@ -170,7 +172,7 @@ impl Pool {
                 .await?;
                 let (roster, lease) = match net::receive(&mut ws).await? {
                     Data::Membership { roster, lease } => (roster, lease),
-                    Data::Error { code, message } => {
+                    Data::Error { code, message, .. } => {
                         bail!(crate::error::CodedError::from_wire(code, message))
                     }
                     _ => bail!(
@@ -322,6 +324,14 @@ async fn handle(
         }
         control.reload_access().await?;
         net::send(local, &LocalResponse::AccessReloaded).await?;
+        return Ok(());
+    }
+    if let LocalRequest::ExecutionPath { token } = &opening {
+        if token != expected_token {
+            bail!(ErrorCode::Unauthenticated.error("invalid local endpoint token"));
+        }
+        let path = crate::config::DaemonConfig::load()?.execution_path();
+        net::send(local, &LocalResponse::ExecutionPath { path }).await?;
         return Ok(());
     }
     let LocalRequest::Open {

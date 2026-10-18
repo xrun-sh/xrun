@@ -71,7 +71,7 @@ impl Session {
                     submission_store: None,
                 })
             }
-            Data::Error { code, message } => {
+            Data::Error { code, message, .. } => {
                 bail!(crate::error::CodedError::from_wire(code, message))
             }
             _ => bail!(ErrorCode::InvalidMessage.error("expected ready")),
@@ -145,7 +145,7 @@ impl Session {
                 }
                 Ok(job)
             }
-            Data::Error { code, message } => {
+            Data::Error { code, message, .. } => {
                 if let Some(record) = self.submission.as_mut() {
                     if ErrorCode::from_wire(code.clone()).rejects_submission() {
                         record.status = "not_accepted".into();

@@ -196,6 +196,7 @@ async fn stream_cancellation_persists_process_result_before_exit_ack_and_never_r
         let request = Request::StreamExec {
             context: JobContext::new(&store.db_id),
             execution: StreamExecution {
+                merge_stderr: false,
                 program: executable.to_string_lossy().into(),
                 args: vec![],
                 cwd: lab.target.to_string_lossy().into(),

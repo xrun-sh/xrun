@@ -1,6 +1,20 @@
 import { expect, test } from "bun:test";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { fixture } from "./fixtures";
+test("unlimited concurrency can be saved without disabling other settings", async () => {
+  const { calls, page } = await fixture();
+  await page("设置");
+  fireEvent.click(screen.getByText("执行环境", { selector: "summary span" }));
+  const input = screen.getByLabelText("同时运行的任务数") as HTMLInputElement;
+  fireEvent.change(input, { target: { value: "0" } });
+  expect(input.checkValidity()).toBe(true);
+  fireEvent.submit(document.getElementById("execution-form")!);
+  await screen.findByText("执行环境已保存");
+  expect(calls.find((call) => call.command === "save_settings")?.args).toEqual({
+    execution: { default_cwd: null, max_concurrent_jobs: 0, path: null },
+  });
+});
+
 test("settings save only execution fields and preserve unsaved input across polling and navigation", async () => {
   const { calls, poll, page } = await fixture();
   await page("设置");

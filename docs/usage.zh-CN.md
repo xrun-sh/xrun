@@ -352,13 +352,18 @@ PowerShell 脚本使用 UTF-8；cmd 脚本只接受 ASCII，脚本参数不能�
 | `--env KEY=VALUE` | 设置远端环境变量，可重复 |
 | `--stdin` | 提交前读完本地 stdin 并一起发送，最多 1 MiB |
 | `--script <shell>` | 从 stdin 读取脚本，最多 1 MiB |
+| `--merge-stderr` | 在目标端共用一条输出管道，两路内容都返回到 stdout |
 | `--timeout <秒>` | 超时时间，前台执行默认 1800，0 表示不限 |
 | `--request-id <ID>` | 恢复同一次提交，见 `xrun doc errors --lang zh` |
 | `-i` | 流式执行，见 `xrun doc streaming --lang zh` |
 
 前台执行原样输出远端的 stdout 和 stderr，并以远端退出码退出。它是**可靠任务**：一旦受理，目标会执行到结束并保存结果，CLI 断线不影响任务。CLI 会在 30 秒内尝试重连并补读日志，仍无法确认结果时返回 75。
 
-目标默认最多同时运行 4 个命令（含流式执行），已满时返回 `DEVICE_BUSY`，不排队。本机后台服务运行时，CLI 会复用到同一目标的加密连接，省去重复握手。
+目标默认最多同时运行 4 个命令（含流式执行）。在目标设备设置 `max_concurrent_jobs = 0` 可取消命令数量限制，也可以用任意正整数设置上限；它不限制命令内部的线程或子进程。满额时返回 `DEVICE_BUSY`，不排队，附总数和本来源最多八个活跃命令的摘要。`jobs`、`logs`、`wait` 查询不占命令名额，执行 `cat` 则是新命令。文件操作和连接另有资源限制。
+
+`--merge-stderr` 适用于普通执行、`start` 和 `-i`：目标在启动进程前让 stdout 和 stderr 共用一条管道，按该管道实际观察到的写入顺序采集。程序自己的缓冲和多个并发写入者仍可能影响先后顺序；合并后无法再区分两种输出。该选项参与请求去重，重试同一个请求时必须保持一致。不合并时，各自流内保序，不保证还原两路输出的原始先后顺序。
+
+本机后台服务运行时，CLI 会复用到同一目标的加密连接，省去重复握手。
 
 ## 任务与日志
 
@@ -398,6 +403,20 @@ xrun ubuntu kill ABC123
 
 先用 `xrun doc --list --lang zh` 找章节、用 `xrun help <命令>` 确认参数。组网完成后，以下流程可用于 AI agent 和脚本；示例目标是已授权的 Linux 设备 `ubuntu`。
 
+### 日常操作
+
+```bash
+xrun ubuntu --script sh < ./build.sh
+xrun windows --script powershell < ./check.ps1
+xrun ubuntu --stdin -- python3 - < ./check.py
+xrun ubuntu push ./result.txt /home/user/output/result.txt --mkdir
+xrun ubuntu pull /home/user/output/result.txt ./result.txt
+xrun ubuntu start --merge-stderr -- cargo build
+xrun ubuntu logs ABC123 --after 0 --json
+```
+
+需要 Shell 语法时用 `--script`，程序输入用 `--stdin`，执行脚本无需先上传。用返回的 `seq` 推进日志游标，或用 `logs --follow`。pull 与执行一样，需要目标允许发起设备访问；不需要反方向授权。运行工具链之前，用 `info --json` 查看已授权目标的 `execution_path`，这是目标服务的 PATH，不是调用方交互终端的 PATH。
+
 ### 提交、查询与等待
 
 **1. 检查本机与目标。** 在发起操作的设备上执行：
@@ -432,7 +451,7 @@ xrun ubuntu jobs ABC123 --json
 xrun ubuntu wait ABC123 --timeout 60 --json
 ```
 
-`jobs <ID>` 返回 Job 对象，`jobs --request-id <ID>` 返回 Job 数组，`wait` 返回包含 `job`、`logs` 和 `logs_error` 的对象。任务成功后，`wait` 的 stdout 例如（仅保留关键字段）：
+`jobs <ID>` 返回 Job 对象，`jobs --request-id <ID>` 返回 Job 数组，`wait` 返回包含 `job`、`logs`、`logs_error`、`wait_timed_out`、`elapsed_ms` 和 `snapshot_error` 的对象。任务成功后，`wait` 的 stdout 例如（仅保留关键字段）：
 
 ```json
 {
@@ -452,13 +471,14 @@ xrun ubuntu wait ABC123 --timeout 60 --json
 
 ### 失败后的下一步
 
-例如，`wait --timeout 60 --json` 等待超时，退出码为 75、stdout 为空，stderr 返回：
+`wait --timeout 60 --json` 到期后，CLI 最多再用两秒查询真实任务快照和指定的末尾日志。stdout 仍使用同一对象结构：`wait_timed_out` 为 `true`，`job` 是真实快照，`elapsed_ms` 是其耗时。确认不了快照时，`job` 为 `null`，`snapshot_error` 说明原因；本地等待超时不等于远端仍在运行。任务未结束或结果未确认时返回 75，取得已结束的真实快照则返回任务退出码。快照未结束时，stderr 例如：
 
 ```json
 {
   "type": "error",
   "code": "WAIT_TIMEOUT",
-  "message": "waiting for task timed out; query jobs/logs for its result"
+  "message": "wait expired; the returned snapshot is not a terminal result",
+  "hint": "Read the returned job snapshot if available; query the same job with jobs/logs or wait again. Do not submit the command again."
 }
 ```
 
@@ -611,8 +631,9 @@ PATH = "/home/user/.cargo/bin:/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 - 修改后对新任务生效，无需重启服务；程序保存设置时会保留其他字段。路径中的 `~` 不会展开，请写目标用户的实际主目录；Windows 的 PATH 用分号分隔。
 - 后台服务通常不加载交互 Shell 的配置，工具链目录（如 `~/.cargo/bin`）需要写进 `[env]` 的 PATH。
+- `connect`、`up`、`join`、`daemon install` 会比较运行中服务的 PATH 与当前 Shell 中已存在的目录；缺少目录时，在 stderr 提示并给出 TOML 配置，JSON 模式输出结构化警告，不自动写入。显式加 `--path-from-shell` 才会保存当前 Shell 的 PATH，也支持与 `--no-daemon` 一起使用。启动诊断最多等待两秒。远端 `info --json` 仅向目标已授权的调用方提供 `execution_path`；离线或未授权时该字段为 `null`。
 - 任务继承服务的环境，但不继承这些构建变量：`CARGO_TARGET_DIR`、`CARGO_BUILD_TARGET`、`RUSTUP_TOOLCHAIN`、`RUST_RECURSION_COUNT`、`RUSTC`、`RUSTDOC`、`RUSTC_WRAPPER`、`RUSTC_WORKSPACE_WRAPPER`、`RUSTFLAGS`、`CARGO_ENCODED_RUSTFLAGS`。需要时写入 `[env]`，或用 `--env` 传入。
-- `max_concurrent_jobs` 是同时运行的命令数，范围 1–64。
+- `max_concurrent_jobs` 默认 4；0 表示取消命令数量限制，正整数指定上限，不再固定限制为最多 64。修改不会取消已有任务，连接、文件和转发限制独立保留。
 - 目标设备为收发的文件和截图保留独立的附件副本。`attachment_retention_days` 默认 30，0 表示长期保留，最大 3650；每 10 分钟清理一次到期的副本，活动摘要保留。
 
 服务日志与任务日志不同：macOS 上 CLI 安装的服务写入 `~/.xrun/daemon-service.log`，Linux 用 `journalctl --user -u xrun-daemon.service` 查看，其他情况请查看外部进程管理器的日志。
@@ -628,7 +649,7 @@ xrun traffic --period today
 
 `status` 的在线状态来自中转，只说明设备连着中转，不保证能执行命令；要确认目标是否可用，请用 `info`。突然断网的设备通常在 45–60 秒后显示为离线。
 
-`--json` 的数据写到 stdout，诊断信息写到 stderr。前台执行不支持 `--json`，原样传递远端的输出。
+`--json` 把结构化命令结果写入 stdout，诊断写入 stderr。前台执行始终原样转发程序输出，此时 `--json` 只改变诊断格式，不把程序输出转成 JSON。已知错误附带可操作的 `hint` 字段，人类可读模式则单独打印一行 `hint:`。
 
 ### 退出码
 

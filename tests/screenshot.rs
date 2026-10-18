@@ -132,6 +132,7 @@ async fn screenshot_download_checks_metadata_integrity_errors_and_local_destinat
                     net::send(
                         &mut ws,
                         &Data::Error {
+                            hint: None,
                             code: code.into(),
                             message: "capture is unavailable".into(),
                         },

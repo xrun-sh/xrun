@@ -100,6 +100,7 @@ fn job(execution: &Execution, lab: &Lab) -> Job {
         leftover_possible: false,
         process: None,
         details: JobDetails::Exec(CommandParams {
+            merge_stderr: false,
             program: execution.program.clone(),
             args: execution.args.clone(),
             cwd: execution.cwd.clone(),
@@ -493,7 +494,7 @@ async fn pipelined_purpose_never_sends_execution_before_handshake_acceptance() -
                     // Even a valid roster does not permit sending Exec before Ready.
                     assert!(tokio::time::timeout(Duration::from_millis(50), net::receive::<Data>(&mut ws)).await.is_err());
                     let response = if failure == "denied" {
-                        Data::Error { code: "PERMISSION_DENIED".into(), message: "not allowed".into() }
+                        Data::Error { code: "PERMISSION_DENIED".into(), message: "not allowed".into(), hint: None }
                     } else {
                         Data::Ready { version: "future-release".into(), protocol: xrun::protocol::ProtocolRange::CURRENT, selected_protocol: if failure == "ready-protocol" { future } else { xrun::protocol::PROTOCOL }, device_id: if failure == "ready-identity" { lab.source_identity.device_id.clone() } else { lab.target_identity.device_id.clone() }, db_id: "test-db".into(), default_cwd: lab.target.to_string_lossy().into() }
                     };

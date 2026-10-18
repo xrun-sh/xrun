@@ -17,6 +17,7 @@ pub(super) async fn run(cli: LocalCli) -> Result<i32> {
     match cli.command {
         Local::Network { operation } => super::network::manage(operation, json).await?,
         Local::Connect {
+            path_from_shell,
             link,
             code,
             name,
@@ -34,21 +35,24 @@ pub(super) async fn run(cli: LocalCli) -> Result<i32> {
                 consent_to_manager().await?;
             }
             daemon::init()?;
+            super::service_path::configure(path_from_shell)?;
             if !no_daemon {
-                service::install("daemon").await?;
+                super::service_path::install(json).await?;
             }
             print(json, &joined, || {
                 println!("{} ({})", joined.name, joined.device_id)
             });
         }
         Local::Up {
+            path_from_shell,
             relay,
             name,
             no_daemon,
             allow,
-        } => up(&relay, name, no_daemon, allow, json).await?,
+        } => up(&relay, name, no_daemon, allow, json, path_from_shell).await?,
         Local::Relay { operation } => super::relay::manage(operation, json).await?,
         Local::Join {
+            path_from_shell,
             link,
             name,
             no_daemon,
@@ -67,8 +71,9 @@ pub(super) async fn run(cli: LocalCli) -> Result<i32> {
                 consent_to_manager().await?;
             }
             daemon::init()?;
+            super::service_path::configure(path_from_shell)?;
             if !no_daemon {
-                service::install("daemon").await?
+                super::service_path::install(json).await?
             }
             print(
                 json,
@@ -229,9 +234,10 @@ pub(super) async fn run(cli: LocalCli) -> Result<i32> {
         Local::AppBridge => crate::bridge::run().await?,
         Local::Daemon { operation } => match operation {
             None => daemon::run().await?,
-            Some(DaemonCommand::Install) => {
+            Some(DaemonCommand::Install { path_from_shell }) => {
                 daemon::init()?;
-                service::install("daemon").await?
+                super::service_path::configure(path_from_shell)?;
+                super::service_path::install(json).await?
             }
             Some(DaemonCommand::Uninstall) => {
                 service::uninstall("daemon").await?;
@@ -377,11 +383,13 @@ async fn up(
     no_daemon: bool,
     allow: bool,
     json: bool,
+    path_from_shell: bool,
 ) -> Result<()> {
     let id = crate::client::create_network(relay, name).await?;
     daemon::init()?;
+    super::service_path::configure(path_from_shell)?;
     if !no_daemon {
-        service::install("daemon").await?;
+        super::service_path::install(json).await?;
     }
     let invitation = crate::client::invite_link(allow).await?;
     print(

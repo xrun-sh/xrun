@@ -63,7 +63,7 @@ async fn claimed_session(
 ) -> Result<WebSocket> {
     match tokio::time::timeout(CONNECT_TIMEOUT, receiver).await?? {
         Ok(socket) => Ok(socket),
-        Err(Data::Error { code, message }) => {
+        Err(Data::Error { code, message, .. }) => {
             bail!(crate::error::CodedError::from_wire(code, message))
         }
         _ => bail!(ErrorCode::InvalidMessage.error("invalid session rejection")),

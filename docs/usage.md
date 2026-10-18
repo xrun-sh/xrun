@@ -352,13 +352,18 @@ PowerShell scripts use UTF-8. cmd scripts accept ASCII only, and their arguments
 | `--env KEY=VALUE` | Set a remote environment variable; repeatable |
 | `--stdin` | Read all local stdin before submission and send it with the request, up to 1 MiB |
 | `--script <shell>` | Read a script from stdin, up to 1 MiB |
+| `--merge-stderr` | Share one output pipe on the target; both streams are returned on stdout |
 | `--timeout <seconds>` | Execution timeout; foreground default 1800, 0 means unlimited |
 | `--request-id <ID>` | Resume the same submission; see `xrun doc errors` |
 | `-i` | Streaming execution; see `xrun doc streaming` |
 
 Foreground execution forwards remote stdout and stderr unchanged and exits with the remote exit code. It is a **reliable job**: once accepted, the target runs it to completion and stores the result, even if the CLI disconnects. The CLI tries to reconnect and catch up on logs for 30 seconds; if it still cannot confirm the result, it exits with code 75.
 
-By default, the target runs at most 4 commands concurrently, including streaming execution. It returns `DEVICE_BUSY` when full, without queuing. With the local background service running, the CLI reuses an encrypted connection to the same target to avoid repeated handshakes.
+By default, the target runs at most 4 commands concurrently, including streaming execution. Set `max_concurrent_jobs = 0` on the target for unlimited command admission, or choose any positive integer as a limit. The setting does not limit threads or child processes within a command. A full limit returns `DEVICE_BUSY` without queuing, with a total count and up to eight of this source's active command summaries. `jobs`, `logs`, and `wait` queries do not consume command slots; executing `cat` is a new command and does. File operations and connections have independent resource limits.
+
+`--merge-stderr` works for ordinary execution, `start`, and `-i`. The target connects both child output streams to one pipe before launch. Capture preserves the writes observed on that pipe; application buffering and concurrent writers can still affect their order. Merged output loses the stdout/stderr distinction. This option is part of the request identity: preserve it when retrying a request. Without it, each stream retains its own order, but there is no original cross-stream order guarantee.
+
+With the local background service running, the CLI reuses an encrypted connection to the same target to avoid repeated handshakes.
 
 ## Jobs and logs
 
@@ -398,6 +403,20 @@ Jobs never rerun automatically. A normal target service shutdown cancels running
 
 Use `xrun doc --list` to find topics and `xrun help <command>` to check arguments. After networking is configured, AI agents and scripts can follow this workflow. The example target is an authorized Linux device named `ubuntu`.
 
+### Everyday operations
+
+```bash
+xrun ubuntu --script sh < ./build.sh
+xrun windows --script powershell < ./check.ps1
+xrun ubuntu --stdin -- python3 - < ./check.py
+xrun ubuntu push ./result.txt /home/user/output/result.txt --mkdir
+xrun ubuntu pull /home/user/output/result.txt ./result.txt
+xrun ubuntu start --merge-stderr -- cargo build
+xrun ubuntu logs ABC123 --after 0 --json
+```
+
+Use `--script` for shell syntax and stdin forwarding for program input; scripts need not be uploaded first. Advance a log cursor using the returned `seq`, or use `logs --follow`. Pull requires the target to allow the initiating device, just like execution; it does not require permission in the reverse direction. Check `info --json` for the target's authorized `execution_path` before running toolchains. PATH is the service's environment, not the caller's interactive shell.
+
 ### Submit, query, and wait
 
 **1. Check the local device and target.** Run these on the initiating device:
@@ -432,7 +451,7 @@ xrun ubuntu jobs ABC123 --json
 xrun ubuntu wait ABC123 --timeout 60 --json
 ```
 
-`jobs <ID>` returns a Job object, `jobs --request-id <ID>` returns an array of Jobs, and `wait` returns an object containing `job`, `logs`, and `logs_error`. After success, `wait` stdout looks like this (key fields only):
+`jobs <ID>` returns a Job object, `jobs --request-id <ID>` returns an array of Jobs, and `wait` returns an object containing `job`, `logs`, `logs_error`, `wait_timed_out`, `elapsed_ms`, and `snapshot_error`. After success, `wait` stdout looks like this (key fields only):
 
 ```json
 {
@@ -452,13 +471,14 @@ The Base64 log data decodes to `xrun-ok\n`. A successful `start` still requires 
 
 ### What to do after failure
 
-For example, when `wait --timeout 60 --json` times out, it exits with 75, leaves stdout empty, and writes this to stderr:
+After `wait --timeout 60 --json` expires, the CLI spends at most two additional seconds obtaining a current task snapshot and its requested log tail. stdout uses the same wrapper: `wait_timed_out` is `true`, `job` is the real snapshot, and `elapsed_ms` is its elapsed time. If the snapshot cannot be confirmed, `job` is `null` and `snapshot_error` explains why. A local timeout never implies `state: running`. An unfinished or unconfirmed result exits with 75; a confirmed terminal snapshot returns the task's exit status. For an unfinished snapshot, stderr includes:
 
 ```json
 {
   "type": "error",
   "code": "WAIT_TIMEOUT",
-  "message": "waiting for task timed out; query jobs/logs for its result"
+  "message": "wait expired; the returned snapshot is not a terminal result",
+  "hint": "Read the returned job snapshot if available; query the same job with jobs/logs or wait again. Do not submit the command again."
 }
 ```
 
@@ -611,8 +631,9 @@ PATH = "/home/user/.cargo/bin:/home/user/.local/bin:/usr/local/bin:/usr/bin:/bin
 
 - Changes affect new jobs without restarting the service. Saving settings through xrun preserves other fields. `~` in paths is not expanded; use the target user's actual home path. Windows PATH entries use semicolons.
 - Background services usually do not load interactive shell configuration. Add toolchain directories such as `~/.cargo/bin` to PATH in `[env]`.
+- `connect`, `up`, `join`, and `daemon install` compare the running service's PATH with existing directories in the invoking shell's PATH. Missing directories produce a warning and a TOML suggestion on stderr; JSON mode emits a structured warning. The configuration is not changed automatically. Add `--path-from-shell` to explicitly save the invoking shell's PATH, including with `--no-daemon`. Startup diagnostic queries are bounded to two seconds. Remote `info --json` exposes `execution_path` only when the target allows this caller; an offline or unauthorized target reports it as `null`.
 - Jobs inherit the service environment except these build variables: `CARGO_TARGET_DIR`, `CARGO_BUILD_TARGET`, `RUSTUP_TOOLCHAIN`, `RUST_RECURSION_COUNT`, `RUSTC`, `RUSTDOC`, `RUSTC_WRAPPER`, `RUSTC_WORKSPACE_WRAPPER`, `RUSTFLAGS`, and `CARGO_ENCODED_RUSTFLAGS`. Set them in `[env]` or pass `--env` when needed.
-- `max_concurrent_jobs` limits concurrent commands to 1–64.
+- `max_concurrent_jobs` defaults to 4; 0 disables the command-count limit, and a positive integer sets a limit without a fixed maximum of 64. Changes do not cancel existing tasks. Connection, file and forwarding limits remain independent.
 - The target keeps independent attachment copies of transferred files and screenshots. `attachment_retention_days` defaults to 30, accepts 0 for indefinite retention, and has a maximum of 3650. Expired copies are cleaned every 10 minutes; activity summaries remain.
 
 Service logs are separate from job logs. CLI-installed services on macOS write to `~/.xrun/daemon-service.log`. On Linux, use `journalctl --user -u xrun-daemon.service`. For other setups, consult your external process manager's logs.
@@ -628,7 +649,7 @@ xrun traffic --period today
 
 Online state in `status` comes from the relay and only means the device is connected to it; it does not guarantee command execution. Use `info` to check target availability. A device that suddenly loses connectivity typically appears offline after 45–60 seconds.
 
-`--json` writes data to stdout and diagnostics to stderr. Foreground execution does not support `--json` and forwards remote output unchanged.
+`--json` writes structured command results to stdout and diagnostics to stderr. Foreground execution always forwards remote output unchanged; its `--json` flag affects diagnostics rather than converting program output to JSON. Known errors include an actionable `hint` field; human diagnostics print `hint:` on a separate line.
 
 ### Exit codes
 

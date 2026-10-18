@@ -473,7 +473,8 @@ export const en = {
   "settings.cwdHint":
     "Used when a remote device does not specify a working directory. Leave blank to use your home directory.",
   "settings.concurrency": "Concurrent tasks",
-  "settings.concurrencyHint": "1–64 tasks. Applies to new tasks only.",
+  "settings.concurrencyHint":
+    "0 means unlimited; a positive integer sets a limit. Applies to new tasks only.",
   "settings.pathTitle": "Tool search path (PATH)",
   "settings.path": "Tool search path",
   "settings.pathPlaceholder": "Leave blank to inherit the service’s PATH",
@@ -696,6 +697,7 @@ export const en = {
     "This device → remote device. The remote device must allow your access.",
   "remote.script": "Command",
   "remote.options": "Execution options",
+  "remote.mergeStderr": "Merge error output into standard output",
   "remote.shell": "Interpreter",
   "remote.cwd": "Remote working directory",
   "remote.defaultCwd": "Use remote default directory",

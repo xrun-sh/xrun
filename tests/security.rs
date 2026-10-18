@@ -63,6 +63,7 @@ async fn exited_leader_remains_waitable_until_group_cleanup() -> Result<()> {
         &Default::default(),
         "test",
         false,
+        false,
     )?;
     assert_eq!(child.wait().await?.code(), Some(7));
     assert_eq!(child.wait().await?.code(), Some(7)); // WNOWAIT: the PID is still reserved.
