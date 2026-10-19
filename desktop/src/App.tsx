@@ -1,8 +1,12 @@
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { DesktopPage } from "./api";
 import { Icon, IconDefinitions, type IconName } from "./components/Icon";
-import { ErrorNotice } from "./components/ErrorNotice";
-import { LocalDeviceCard, StatusBanner } from "./components/LocalDevice";
+import {
+  LocalDeviceCard,
+  StatusBanner,
+  StatusProblem,
+} from "./components/LocalDevice";
+import { Notices } from "./components/Notices";
 import { t, useLanguage } from "./i18n";
 import { Logo } from "./components/Logo";
 import { Devices } from "./pages/Devices";
@@ -40,14 +44,13 @@ export function App() {
   const statusController = useStatus(interactionState, visible);
   const confirmation = useConfirmation(interactionState);
   const operations = useOperationController(
-    page,
     statusController.refresh,
     confirmation.confirm,
     interactionState,
     statusController.clearError,
   );
   const { status, error: statusError } = statusController;
-  const { busy, pending, error, toast } = operations;
+  const { busy, pending } = operations;
   const members = useDevices(
     status,
     visible && page === "devices",
@@ -66,17 +69,26 @@ export function App() {
     navigate("settings");
     setNetworkSettingsRequest((value) => value + 1);
   };
-  const feedback = (origin: DesktopPage) =>
-    error?.page === origin ? (
-      <ErrorNotice
-        title={error.title}
-        detail={error.detail}
-        dismiss={() => {
-          statusController.dismiss(error.detail);
-          operations.clearError();
-        }}
-      />
-    ) : null;
+  // Local status problems stay beside this device instead of above every page;
+  // their notice opens on request and closes once the problem is gone.
+  const statusNotice = useRef(0);
+  const problem = statusError
+    ? () => {
+        statusNotice.current = operations.fail(
+          "error.status",
+          statusError,
+          () => {
+            operations.clearError();
+            void statusController.refresh();
+          },
+        );
+      }
+    : null;
+  const shownFailure = operations.error?.id;
+  const { clearError } = operations;
+  useEffect(() => {
+    if (!statusError && shownFailure === statusNotice.current) clearError();
+  }, [statusError, shownFailure, clearError]);
   return (
     <OperationsContext.Provider value={operations}>
       <IconDefinitions />
@@ -104,24 +116,19 @@ export function App() {
             </button>
           ))}
         </nav>
-        {status?.local.joined && (
+        {status?.local.joined ? (
           <LocalDeviceCard
             status={status}
             openNetworkSettings={openNetworkSettings}
+            showProblem={problem}
           />
+        ) : (
+          problem && <StatusProblem show={problem} />
         )}
       </aside>
       <div className="workspace">
         <main ref={main} aria-busy={busy}>
           {status?.local.joined && <StatusBanner status={status} />}
-          {statusError && statusError !== error?.detail && (
-            <ErrorNotice
-              title={t("error.status")}
-              detail={statusError}
-              retry={() => void statusController.refresh()}
-              dismiss={() => statusController.dismiss(statusError)}
-            />
-          )}
           {pending && (
             <span className="operation-progress sr-only" role="status">
               {t(`operation.${pending}`)}
@@ -137,7 +144,6 @@ export function App() {
               paused={confirmation.active}
               status={status}
               members={members}
-              feedback={feedback("devices")}
             />
           </section>
           <section
@@ -150,7 +156,6 @@ export function App() {
               paused={confirmation.active}
               status={status}
               devices={members.devices}
-              feedback={feedback("activity")}
             />
           </section>
           <section
@@ -160,17 +165,11 @@ export function App() {
           >
             <SettingsPage
               status={status}
-              feedback={feedback("settings")}
               networkSettingsRequest={networkSettingsRequest}
             />
           </section>
         </main>
-        {toast && (
-          <div id="toast" className="toast" role="status">
-            <Icon name="check" />
-            {toast}
-          </div>
-        )}
+        <Notices />
       </div>
       <ConfirmationDialog controller={confirmation} />
     </OperationsContext.Provider>

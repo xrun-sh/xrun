@@ -8,7 +8,9 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use serde::{Deserialize, Serialize};
 use std::{path::Path, time::Duration};
 mod activity;
-pub use activity::{ActivityPage, activity, attachment, job, save_attachment};
+pub use activity::{
+    ActivityPage, ActivityScript, SearchTerm, activity, attachment, job, save_attachment, script,
+};
 
 const HISTORY_BUSY_TIMEOUT: Duration = Duration::from_millis(500);
 const PAGE_SIZE: usize = 50;
@@ -166,7 +168,7 @@ mod tests {
         let dir = tempfile::tempdir()?;
         let path = dir.path().join("daemon.db");
         assert!(
-            activity::activity_at(&path, None, "all")?
+            activity::activity_at(&path, None, "all", &[])?
                 .entries
                 .is_empty()
         );
@@ -244,7 +246,7 @@ mod tests {
         ] {
             store.insert(&operation(id, &store.db_id, details, state, time))?;
         }
-        let page = activity::activity_at(&path, None, "all")?;
+        let page = activity::activity_at(&path, None, "all", &[])?;
         assert_eq!(
             page.entries
                 .iter()
@@ -254,15 +256,19 @@ mod tests {
         );
         assert_eq!(page.entries[0].kind(), JobKind::Push);
         assert_eq!(
-            activity::activity_at(&path, None, "failed")?.entries.len(),
+            activity::activity_at(&path, None, "failed", &[])?
+                .entries
+                .len(),
             2
         );
         assert_eq!(
-            activity::activity_at(&path, None, "running")?.entries.len(),
+            activity::activity_at(&path, None, "running", &[])?
+                .entries
+                .len(),
             2
         );
         assert!(crate::error::is(
-            &activity::activity_at(&path, None, "bad").unwrap_err(),
+            &activity::activity_at(&path, None, "bad", &[]).unwrap_err(),
             ErrorCode::InvalidFilter
         ));
         assert!(crate::error::is(
@@ -293,7 +299,7 @@ mod tests {
                 1000,
             ))?;
         }
-        let first = activity::activity_at(&path, None, "all")?;
+        let first = activity::activity_at(&path, None, "all", &[])?;
         assert_eq!(first.entries.len(), 50);
         let cursor = first.next_cursor.clone().unwrap();
         let mut newer = command(56, &store.db_id);
@@ -303,7 +309,7 @@ mod tests {
         let mut entries = first.entries;
         let mut before = Some(cursor.clone());
         while let Some(cursor) = before {
-            let page = activity::activity_at(&path, Some(&cursor), "all")?;
+            let page = activity::activity_at(&path, Some(&cursor), "all", &[])?;
             entries.extend(page.entries);
             before = page.next_cursor;
         }
@@ -317,13 +323,13 @@ mod tests {
             110
         );
         assert!(crate::error::is(
-            &activity::activity_at(&path, Some("invalid"), "all").unwrap_err(),
+            &activity::activity_at(&path, Some("invalid"), "all", &[]).unwrap_err(),
             ErrorCode::InvalidCursor
         ));
         Connection::open(&path)?
             .execute("UPDATE meta SET value='replaced' WHERE key='db_id'", [])?;
         assert!(crate::error::is(
-            &activity::activity_at(&path, Some(&cursor), "all").unwrap_err(),
+            &activity::activity_at(&path, Some(&cursor), "all", &[]).unwrap_err(),
             ErrorCode::DbReset
         ));
         assert!(crate::error::is(
@@ -367,7 +373,7 @@ mod tests {
         std::fs::rename(old, root.join(format!("{}.blob", metadata.id)))?;
         store.attach(&job.job_id, metadata.clone()).await?;
         cache.prune()?;
-        let page = activity::activity_at(&path, None, "all")?;
+        let page = activity::activity_at(&path, None, "all", &[])?;
         assert_eq!(page.entries.len(), 1);
         let attachment = &page.entries[0].attachments[0];
         assert_eq!(attachment.status, "expired");
@@ -383,6 +389,194 @@ mod tests {
             "SELECT COUNT(*) FROM job_attachments WHERE status='expired' AND deleted_at_ms IS NOT NULL",
             [], |row| row.get::<_,i64>(0)
         )?,1);
+        Ok(())
+    }
+    fn script(id: usize, db: &str, time: i64) -> Job {
+        let mut job = command(id, db);
+        if let JobDetails::Exec(params) = &mut job.details {
+            params.program = String::new();
+            params.args = vec![];
+            params.shell = Some("sh".into());
+        }
+        job.created_at_ms = time;
+        job
+    }
+    #[test]
+    fn script_titles_skip_blank_lines_and_interpreter_setup() {
+        let title = activity::script_title;
+        assert_eq!(
+            title("#!/bin/sh\nset -euo pipefail\n\n  cargo test --workspace  \nexit 0\n")
+                .as_deref(),
+            Some("cargo test --workspace")
+        );
+        assert_eq!(
+            title("@ECHO OFF\r\nsetlocal\r\nrobocopy src dst\r\n").as_deref(),
+            Some("robocopy src dst")
+        );
+        assert_eq!(
+            title("$ErrorActionPreference = 'Stop'\n# Rotate logs\nGet-Item").as_deref(),
+            Some("# Rotate logs")
+        );
+        assert_eq!(title("set -e\n\n"), None);
+        assert_eq!(
+            title(&"界".repeat(200)),
+            Some(format!("{}…", "界".repeat(160)))
+        );
+    }
+    #[test]
+    fn scripts_are_titled_searched_and_expire_with_attachments() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("daemon.db");
+        let store = JobStore::open(&path, true)?;
+        let body = "#!/bin/sh\nset -euo pipefail\ncargo test --workspace\n";
+        let now = now_ms();
+        store.insert_with_script(&script(1, &store.db_id, now - 1), body)?;
+        store.insert_with_script(&script(2, &store.db_id, now - 2), "set -e\n")?;
+        let mut program = command(3, &store.db_id);
+        program.created_at_ms = now - 3;
+        store.insert(&program)?;
+        let page = activity::activity_at(&path, None, "all", &[])?;
+        assert_eq!(page.entries.len(), 3);
+        assert_eq!(
+            page.script_titles,
+            std::collections::BTreeMap::from([(
+                "000001".to_string(),
+                "cargo test --workspace".to_string()
+            )])
+        );
+        let ids = |text: &str| -> Result<Vec<String>> {
+            let term = SearchTerm {
+                text: text.into(),
+                ..Default::default()
+            };
+            Ok(activity::activity_at(&path, None, "all", &[term])?
+                .entries
+                .into_iter()
+                .map(|job| job.job_id)
+                .collect())
+        };
+        assert_eq!(ids("WORKSPACE")?, ["000001"]);
+        assert_eq!(ids("set -e")?, ["000001", "000002"]);
+        let read = |id: &str| activity::script_at(&path, &store.db_id, id);
+        let retained = read("000001")?;
+        assert_eq!(retained.text.as_deref(), Some(body));
+        assert!(!retained.truncated);
+        // Programs have no script, like unknown jobs.
+        for id in ["000003", "000009"] {
+            assert!(crate::error::is(
+                &read(id).unwrap_err(),
+                ErrorCode::JobNotFound
+            ));
+        }
+        assert!(crate::error::is(
+            &activity::script_at(&path, "old-db", "000001").unwrap_err(),
+            ErrorCode::DbReset
+        ));
+        Connection::open(&path)?.execute(
+            "UPDATE job_scripts SET created_at_ms=1 WHERE job_id='000001'",
+            [],
+        )?;
+        store.attachments().prune()?;
+        assert!(read("000001")?.text.is_none());
+        assert_eq!(read("000002")?.text.as_deref(), Some("set -e\n"));
+        assert!(ids("workspace")?.is_empty());
+        assert!(
+            activity::activity_at(&path, None, "all", &[])?
+                .script_titles
+                .is_empty()
+        );
+        Ok(())
+    }
+    #[tokio::test]
+    async fn search_requires_every_word_and_pages_within_matches() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let path = dir.path().join("daemon.db");
+        let store = JobStore::open(&path, true)?;
+        let mut build = command(1, &store.db_id);
+        let mut script = command(2, &store.db_id);
+        if let (JobDetails::Exec(build), JobDetails::Exec(script)) =
+            (&mut build.details, &mut script.details)
+        {
+            build.program = "cargo".into();
+            build.args = vec!["build".into(), "--release".into()];
+            build.cwd = "/Users/me/Projects/xrun".into();
+            script.program = String::new();
+            script.args = vec![];
+            script.shell = Some("zsh".into());
+        }
+        build.created_at_ms = 300;
+        script.created_at_ms = 200;
+        script.source_device_id = "laptop".into();
+        store.insert(&build)?;
+        store.insert(&script)?;
+        let pull = JobDetails::Pull(PullParams {
+            path: "Reports/Q3.txt".into(),
+            cwd: None,
+        });
+        store.insert(&operation(3, &store.db_id, pull, JobState::Succeeded, 100))?;
+        let forward = JobDetails::Forward(ForwardParams { port: 5173 });
+        store.insert(&operation(4, &store.db_id, forward, JobState::Running, 50))?;
+        let capture = JobDetails::Screenshot(ScreenshotParams {
+            options: Default::default(),
+        });
+        store.insert(&operation(
+            5,
+            &store.db_id,
+            capture,
+            JobState::Succeeded,
+            25,
+        ))?;
+        let metadata = store.attachments().save(&b"png"[..], "desk-capture.png")?;
+        store.attach("P00005", metadata).await?;
+        let ids = |search: &[SearchTerm]| -> Result<Vec<String>> {
+            Ok(activity::activity_at(&path, None, "all", search)?
+                .entries
+                .into_iter()
+                .map(|job| job.job_id)
+                .collect())
+        };
+        let word = |text: &str| SearchTerm {
+            text: text.into(),
+            ..Default::default()
+        };
+        assert_eq!(ids(&[word("RELEASE")])?, ["000001"]);
+        assert_eq!(ids(&[word("cargo"), word("projects/xrun")])?, ["000001"]);
+        assert!(ids(&[word("cargo"), word("zsh")])?.is_empty());
+        assert_eq!(ids(&[word("zsh")])?, ["000002"]);
+        assert_eq!(ids(&[word("q3.txt")])?, ["P00003"]);
+        assert_eq!(ids(&[word("localhost:5173")])?, ["P00004"]);
+        assert_eq!(ids(&[word("desk-capture")])?, ["P00005"]);
+        assert_eq!(ids(&[word("p00004")])?, ["P00004"]);
+        let named = SearchTerm {
+            text: "MacBook".into(),
+            devices: vec!["laptop".into()],
+            kinds: vec![],
+        };
+        assert_eq!(ids(&[named])?, ["000002"]);
+        let labeled = SearchTerm {
+            text: "文件".into(),
+            devices: vec![],
+            kinds: vec![JobKind::Pull, JobKind::Forward],
+        };
+        assert_eq!(ids(&[labeled])?, ["P00003", "P00004"]);
+        for n in 10..70 {
+            let mut job = command(n, &store.db_id);
+            job.created_at_ms = 1000 + n as i64;
+            store.insert(&job)?;
+        }
+        let first = activity::activity_at(&path, None, "all", &[word("hello")])?;
+        assert_eq!(first.entries.len(), 50);
+        let rest =
+            activity::activity_at(&path, first.next_cursor.as_deref(), "all", &[word("hello")])?;
+        assert_eq!(rest.entries.len(), 10);
+        assert_eq!(rest.entries.last().unwrap().job_id, "000010");
+        assert!(rest.next_cursor.is_none());
+        for invalid in [vec![word(" ")], vec![word("x"); 9]] {
+            assert!(crate::error::is(
+                &activity::activity_at(&path, None, "all", &invalid).unwrap_err(),
+                ErrorCode::InvalidFilter
+            ));
+        }
         Ok(())
     }
 }

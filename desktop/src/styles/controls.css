@@ -430,6 +430,17 @@ textarea:focus-visible {
   outline: none;
 }
 
+/* A field named by a failure notice stays marked until it is edited. */
+input[aria-invalid="true"],
+input[aria-invalid="true"]:hover:not(:disabled):not(:read-only) {
+  border-color: var(--danger);
+}
+
+input[aria-invalid="true"]:focus {
+  border-color: var(--danger);
+  box-shadow: 0 0 0 3px var(--danger-hover);
+}
+
 input::placeholder,
 textarea::placeholder {
   color: var(--faint);

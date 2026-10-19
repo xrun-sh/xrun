@@ -6,8 +6,13 @@ import {
   waitFor,
   within,
 } from "@testing-library/react";
-import { commandJob, findActivity, fixture } from "./fixtures";
-import type { TrafficReport } from "../src/api";
+import {
+  commandJob,
+  findActivity,
+  fixture,
+  revealOlderActivity,
+} from "./fixtures";
+import type { ActivityPage, TrafficReport } from "../src/api";
 import { t } from "../src/i18n";
 
 test("empty devices stay readable during polling and slow requests do not overlap", async () => {
@@ -41,18 +46,23 @@ test("empty devices stay readable during polling and slow requests do not overla
   );
 });
 
-test("activity pagination remains usable during polling and ignores its late response", async () => {
+test("older activity loads during a slow refresh and the late refresh keeps it", async () => {
   let delay = false;
   let complete: ((value: unknown) => void) | undefined;
+  const now = Date.now();
   const result = {
     db_id: "db-original",
-    entries: [commandJob("PAGE1")],
+    entries: [commandJob("PAGE1", { created_at_ms: now - 1000 })],
     next_cursor: "page-2",
   };
   const { page, poll } = await fixture({
     activity_history: ({ before }) =>
       before
-        ? { ...result, entries: [commandJob("PAGE2")], next_cursor: null }
+        ? {
+            ...result,
+            entries: [commandJob("PAGE2", { created_at_ms: now - 5000 })],
+            next_cursor: null,
+          }
         : delay
           ? new Promise((resolve) => (complete = resolve))
           : result,
@@ -60,18 +70,80 @@ test("activity pagination remains usable during polling and ignores its late res
   await page("活动");
   const first = await findActivity("PAGE1");
   const refresh = screen.getByRole("button", { name: "刷新" });
-  const next = screen.getByRole("button", { name: "下一页" });
   delay = true;
   await poll();
   expect(await findActivity("PAGE1")).toBe(first);
   expect(refresh.getAttribute("aria-label")).toBe("刷新");
   expect(refresh.getAttribute("aria-busy")).toBe("true");
-  expect((next as HTMLButtonElement).disabled).toBe(false);
-  fireEvent.click(next);
+  await revealOlderActivity();
   await findActivity("PAGE2");
   await act(async () => complete?.(result));
+  expect(await findActivity("PAGE1")).toBe(first);
   expect(await findActivity("PAGE2")).toBeTruthy();
-  expect(screen.queryByRole("button", { name: /PAGE1/ })).toBeNull();
+});
+
+test("a refreshed script loses its old title while a concurrent older page is preserved", async () => {
+  const now = Date.now();
+  const params = {
+    ...commandJob().params,
+    program: "",
+    shell: "sh",
+    input_size: 20,
+  };
+  const first = commandJob("SCRIPT1", { params, created_at_ms: now });
+  const second = commandJob("SCRIPT2", { params, created_at_ms: now - 1000 });
+  const third = commandJob("PAGE3", { created_at_ms: now - 2000 });
+  let expired = false;
+  let completeOlder!: (page: ActivityPage) => void;
+  let completeRefresh!: (page: ActivityPage) => void;
+  const firstPage = (): ActivityPage => ({
+    db_id: "db-original",
+    entries: [first],
+    next_cursor: "page-2",
+    script_titles: expired ? {} : { SCRIPT1: "echo first-script" },
+  });
+  const secondPage = (): ActivityPage => ({
+    ...firstPage(),
+    entries: [second],
+    next_cursor: "page-3",
+    script_titles: expired ? {} : { SCRIPT2: "echo second-script" },
+  });
+  const { page, poll } = await fixture({
+    activity_history: ({ before }) => {
+      if (before === "page-3")
+        return new Promise<ActivityPage>(
+          (resolve) => (completeOlder = resolve),
+        );
+      if (before === "page-2")
+        return expired
+          ? new Promise<ActivityPage>((resolve) => (completeRefresh = resolve))
+          : secondPage();
+      return firstPage();
+    },
+  });
+  await page("活动");
+  await revealOlderActivity();
+  await findActivity("SCRIPT2");
+  await waitFor(() => expect(completeOlder).toBeDefined());
+  expired = true;
+  await poll();
+  await waitFor(() => expect(completeRefresh).toBeDefined());
+  await act(async () =>
+    completeOlder({
+      db_id: "db-original",
+      entries: [third],
+      next_cursor: null,
+      script_titles: {},
+    }),
+  );
+  const older = await findActivity("PAGE3");
+  await act(async () => completeRefresh(secondPage()));
+  expect(await findActivity("PAGE3")).toBe(older);
+  for (const id of ["SCRIPT1", "SCRIPT2"])
+    expect(
+      (await findActivity(id)).querySelector(".activity-row-title")
+        ?.textContent,
+    ).toBe("sh 脚本 · 20 B");
 });
 
 test("an empty activity timeline stays empty while it updates", async () => {

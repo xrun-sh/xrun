@@ -4,6 +4,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useRef,
   useState,
   type RefObject,
 } from "react";
@@ -13,7 +14,6 @@ import {
   type Confirm,
   type Operation,
   type PendingOperation,
-  type DesktopPage,
 } from "../api";
 import { errorCode, errorText } from "../errors";
 export interface InteractionState {
@@ -22,7 +22,6 @@ export interface InteractionState {
   windowGuards: Set<string>;
 }
 export function useOperationController(
-  page: DesktopPage,
   refreshStatus: () => Promise<unknown>,
   confirm: Confirm,
   interactionState: RefObject<InteractionState>,
@@ -38,11 +37,30 @@ export function useOperationController(
   );
   const [pending, setPending] = useState<PendingOperation | null>(null);
   const [error, setError] = useState<{
-    page: DesktopPage;
+    /** Distinguishes repeated failures with the same text. */
+    id: number;
     title: PlainMessageKey;
     detail: string;
     code?: string;
+    retry?: () => void;
   } | null>(null);
+  const failures = useRef(0);
+  /** Show a failure in the shared notice; components without `operate` report here. */
+  const fail = useCallback(
+    (title: PlainMessageKey, value: unknown, retry?: () => void) => {
+      const id = ++failures.current;
+      setError({
+        id,
+        title,
+        detail: errorText(value),
+        code: errorCode(value),
+        retry,
+      });
+      return id;
+    },
+    [],
+  );
+  const clearError = useCallback(() => setError(null), []);
   const [toast, setToast] = useState<PlainMessageKey | null>(null);
   useEffect(() => {
     if (!toast) return;
@@ -52,14 +70,12 @@ export function useOperationController(
   const operate: Operation = async (operation, context) => {
     if (interactionState.current.busy) return undefined;
     interactionState.current.busy = true;
-    const origin = page;
     setPending(context.name);
     setError(null);
     clearStatusError();
     try {
       return await operation();
     } catch (e) {
-      const detail = errorText(e);
       const pairingTitles: Record<string, PlainMessageKey> = {
         INVALID_CODE: "setup.invalidCode",
         CODE_EXPIRED: "setup.expiredCode",
@@ -85,7 +101,13 @@ export function useOperationController(
                   ? "action.createdServiceFailed"
                   : "action.joinedServiceFailed"
                 : context.title);
-      setError({ page: origin, title, detail, code: errorCode(e) });
+      fail(
+        title,
+        e,
+        errorCode(e) === "SERVICE_START_FAILED"
+          ? () => void action({ command: "start" })
+          : context.retry,
+      );
     } finally {
       await refreshStatus();
       interactionState.current.busy = false;
@@ -124,6 +146,7 @@ export function useOperationController(
                 : "create_network"
               : request.command,
           title: titles[request.command],
+          retry: () => void action(request),
         },
       )) === true;
     if (success) {
@@ -147,22 +170,18 @@ export function useOperationController(
       await action({ command: "stop" });
   };
 
-  const reportError = (
-    value: unknown,
-    title: PlainMessageKey = "error.settings",
-  ) => setError({ page: "settings", title, detail: errorText(value) });
   return {
     busy: pending !== null,
     pending,
     error: error && { ...error, title: t(error.title) },
     toast: toast && t(toast),
     notify: setToast,
-    clearError: () => setError(null),
+    clearError,
+    fail,
     operate,
     action,
     stop,
     confirm,
-    reportError,
     keepWindow,
   };
 }

@@ -66,6 +66,39 @@ Object.defineProperty(window, "ResizeObserver", {
   configurable: true,
   value: ResizeObserverMock,
 });
+/** Nothing intersects until a test scrolls an observed element into view. */
+class IntersectionObserverMock {
+  static observers = new Set<IntersectionObserverMock>();
+  readonly targets = new Set<Element>();
+  constructor(readonly callback: IntersectionObserverCallback) {}
+  observe(target: Element) {
+    this.targets.add(target);
+    IntersectionObserverMock.observers.add(this);
+  }
+  unobserve(target: Element) {
+    this.targets.delete(target);
+  }
+  disconnect() {
+    this.targets.clear();
+    IntersectionObserverMock.observers.delete(this);
+  }
+  takeRecords() {
+    return [];
+  }
+}
+export function intersect(target: Element, isIntersecting: boolean) {
+  for (const observer of IntersectionObserverMock.observers)
+    if (observer.targets.has(target))
+      observer.callback(
+        [{ target, isIntersecting } as IntersectionObserverEntry],
+        observer as unknown as IntersectionObserver,
+      );
+}
+for (const scope of [globalThis, window])
+  Object.defineProperty(scope, "IntersectionObserver", {
+    configurable: true,
+    value: IntersectionObserverMock,
+  });
 
 const { cleanup } = await import("@testing-library/react");
 afterEach(() => {

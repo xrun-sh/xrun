@@ -91,22 +91,31 @@ test("pause and resume keep permissions and expose the paused state", async () =
   ).toBe(false);
 });
 
-test("recovered status errors disappear and dismissed errors do not reappear on every poll", async () => {
+test("status problems wait beside this device and their notice closes once they recover", async () => {
   const { status, poll } = await fixture();
   status.error = {
     code: "CONNECT_FAILED",
     message: "temporary network failure",
   };
   await poll();
-  expect(screen.getByRole("alert").textContent).toContain("本机检查遇到问题");
+  expect(screen.queryByRole("alert")).toBeNull();
+  const problem = () =>
+    screen.queryByRole("button", { name: "本机检查遇到问题" });
+  expect(problem()?.closest(".local-device")).toBeTruthy();
+  fireEvent.click(problem()!);
+  const alert = screen.getByRole("alert");
+  expect(alert.textContent).toContain("本机检查遇到问题，请查看详情。");
+  expect(alert.textContent).toContain("CONNECT_FAILED");
   status.error = null;
   await poll();
+  expect(problem()).toBeNull();
   expect(screen.queryByRole("alert")).toBeNull();
   status.error = {
     code: "CONNECT_FAILED",
     message: "temporary network failure",
   };
   await poll();
+  fireEvent.click(problem()!);
   fireEvent.click(
     within(screen.getByRole("alert")).getByRole("button", {
       name: "关闭错误提示",
@@ -114,20 +123,16 @@ test("recovered status errors disappear and dismissed errors do not reappear on 
   );
   await poll();
   expect(screen.queryByRole("alert")).toBeNull();
-  status.error = null;
-  await poll();
-  status.error = {
-    code: "CONNECT_FAILED",
-    message: "temporary network failure",
-  };
-  await poll();
-  expect(screen.getByRole("alert")).toBeTruthy();
+  expect(problem()).toBeTruthy();
 });
 
-test("operation errors stay on the originating page until dismissed or retried", async () => {
-  const { status, poll, page } = await fixture({
+test("operation failures float over every page until dismissed or retried", async () => {
+  let broken = true;
+  const { status, poll, page, calls } = await fixture({
     start: () => {
-      throw "HELPER_NOT_FOUND: missing helper";
+      if (broken) throw "HELPER_NOT_FOUND: missing helper";
+      status.local.daemon_running = true;
+      return null;
     },
   });
   status.local.daemon_running = false;
@@ -136,10 +141,26 @@ test("operation errors stay on the originating page until dismissed or retried",
   fireEvent.click(screen.getByRole("button", { name: "启动服务" }));
   await screen.findByText("后台服务未能启动，请查看详情后重试。");
   await poll();
-  expect(screen.getByRole("alert").textContent).toContain("HELPER_NOT_FOUND");
+  const alert = screen.getByRole("alert");
+  expect(alert.closest(".notices")).toBeTruthy();
+  expect(alert.closest("main")).toBeNull();
+  expect(alert.textContent).toContain("HELPER_NOT_FOUND");
   await page("设置");
-  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.getByRole("alert").textContent).toContain("HELPER_NOT_FOUND");
+  broken = false;
+  await act(async () => {
+    fireEvent.click(
+      within(screen.getByRole("alert")).getByRole("button", { name: "重试" }),
+    );
+  });
+  await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
+  expect(calls.filter((call) => call.command === "start")).toHaveLength(2);
+  broken = true;
+  status.local.daemon_running = false;
+  await poll();
   await page("设备");
+  fireEvent.click(screen.getByRole("button", { name: "启动服务" }));
+  await screen.findByRole("alert");
   fireEvent.click(
     within(screen.getByRole("alert")).getByRole("button", {
       name: "关闭错误提示",
@@ -149,7 +170,7 @@ test("operation errors stay on the originating page until dismissed or retried",
   expect(screen.queryByRole("alert")).toBeNull();
 });
 
-test("global service controls surface errors on the activity page", async () => {
+test("global service controls report failures in the shared notice", async () => {
   const { page } = await fixture({
     pause_access: () => {
       throw "STORAGE_ERROR: permission state unavailable";
@@ -163,8 +184,6 @@ test("global service controls surface errors on the activity page", async () => 
   expect(alert.textContent).toContain("远程访问设置未能更新");
   expect(alert.textContent).toContain("STORAGE_ERROR");
   await page("设备");
-  expect(screen.queryByRole("alert")).toBeNull();
-  await page("活动");
   expect(screen.getByRole("alert").textContent).toContain("STORAGE_ERROR");
 });
 

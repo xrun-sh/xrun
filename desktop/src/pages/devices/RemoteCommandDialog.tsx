@@ -1,10 +1,4 @@
-import {
-  useEffect,
-  useLayoutEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import {
   api,
   type CommandJob,
@@ -24,12 +18,10 @@ export function RemoteCommandDialog({
   device,
   active,
   close,
-  feedback,
 }: {
   device: Device;
   active: boolean;
   close: () => void;
-  feedback: ReactNode;
 }) {
   const { busy, operate, confirm, clearError } = useOperations();
   const dialog = useRef<HTMLDialogElement>(null);
@@ -224,7 +216,6 @@ export function RemoteCommandDialog({
         </button>
       </div>
       <p className="field-help">{t("remote.direction")}</p>
-      {feedback}
       {readError && (
         <ErrorNotice
           title={t("remote.readFailed")}

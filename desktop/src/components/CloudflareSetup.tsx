@@ -4,7 +4,7 @@ import { useKeepWindow, useOperations } from "../app/useOperations";
 import { t } from "../i18n";
 import { errorText } from "../errors";
 import { useDeploymentProgress } from "../app/useDeploymentProgress";
-import { DeploymentProgress } from "./DeploymentProgress";
+import { DeploymentSteps } from "./DeploymentProgress";
 import { ErrorNotice } from "./ErrorNotice";
 import { Select } from "./Select";
 
@@ -19,20 +19,18 @@ export function CloudflareSetup({
   onCreated: () => void;
   onRetry: () => void;
 }) {
-  const { busy, operate, notify, error } = useOperations();
+  const { busy, operate, notify, error, fail } = useOperations();
   const [relayRegion, setRelayRegion] = useState("auto");
   const [workerName, setWorkerName] = useState("xrun-relay");
   const [accounts, setAccounts] = useState<CloudflareAccount[] | null>(null);
   const [account, setAccount] = useState("");
   const [deployment, setDeployment] = useState<RelayDeployment | null>(null);
-  const [authorizationError, setAuthorizationError] = useState<string | null>(
-    null,
-  );
   const [phase, setPhase] = useState<
     "idle" | "accounts" | "authorization" | "deploying" | "connecting"
   >("idle");
   const submitting = useRef(false);
   const progress = useDeploymentProgress();
+  const [failed, setFailed] = useState(false);
   const [savedRelays, setSavedRelays] = useState<RelayDeployment[]>([]);
   const [savedError, setSavedError] = useState<string | null>(null);
   const [nameConflict, setNameConflict] = useState(false);
@@ -60,21 +58,10 @@ export function CloudflareSetup({
       setNameConflict(true);
       if (advanced.current) advanced.current.open = true;
     }
-  }, [error]);
+  }, [error?.id, error?.code]);
   const receiveProgress = (event: Parameters<typeof progress.receive>[0]) => {
     progress.receive(event);
     if (event.stage === "authorization_received") setPhase("accounts");
-    if (
-      event.status === "failed" &&
-      event.error &&
-      [
-        "authorization",
-        "authorization_received",
-        "token_exchange",
-        "accounts",
-      ].includes(event.stage)
-    )
-      setAuthorizationError(errorText(event.error));
     if (event.error?.code === "ALREADY_EXISTS") {
       setNameConflict(true);
       if (advanced.current) advanced.current.open = true;
@@ -83,9 +70,9 @@ export function CloudflareSetup({
   };
   const reauthorize = async () => {
     if (busy || submitting.current) return;
-    setAuthorizationError(null);
     progress.start();
-    await operate(
+    setFailed(false);
+    const authorized = await operate(
       async () => {
         setPhase("accounts");
         try {
@@ -98,19 +85,21 @@ export function CloudflareSetup({
           if (available) {
             setAccounts(available);
             setAccount(available.length === 1 ? available[0].id : "");
-          }
+          } else progress.clear();
+          return true;
         } finally {
           setPhase("idle");
         }
       },
       { name: "cloudflare_accounts", title: "cloudflare.authorizationFailed" },
     );
+    setFailed(authorized === undefined);
   };
   const create = async () => {
     if (busy || submitting.current) return;
     submitting.current = true;
-    setAuthorizationError(null);
     progress.start();
+    setFailed(false);
     const success = await operate(
       async () => {
         try {
@@ -123,7 +112,11 @@ export function CloudflareSetup({
               false,
               receiveProgress,
             );
-            if (!available) return false;
+            // A cancelled authorization leaves nothing to show.
+            if (!available) {
+              progress.clear();
+              return false;
+            }
             setAccounts(available);
             if (available.length !== 1) return false;
             selectedAccount = available[0].id;
@@ -139,7 +132,10 @@ export function CloudflareSetup({
             !!deployment,
             receiveProgress,
           );
-          if (!relay) return false;
+          if (!relay) {
+            progress.clear();
+            return false;
+          }
           setDeployment(relay);
           onCreated();
           return true;
@@ -149,7 +145,10 @@ export function CloudflareSetup({
       },
       { name: "create_cloudflare_network", title: "cloudflare.createFailed" },
     );
-    if (success === undefined) onRetry();
+    if (success === undefined) {
+      setFailed(true);
+      onRetry();
+    }
     submitting.current = false;
   };
   return (
@@ -207,7 +206,7 @@ export function CloudflareSetup({
               id="worker-name"
               type="text"
               required
-              pattern="[a-z0-9][a-z0-9-]{0,62}"
+              pattern="[a-z0-9](?:[a-z0-9]|-){0,62}"
               maxLength={63}
               onInvalid={(event) => {
                 const details = event.currentTarget.closest("details");
@@ -313,24 +312,17 @@ export function CloudflareSetup({
             </button>
           </div>
         )}
-        {busy && (
-          <DeploymentProgress
-            current={progress.current}
-            events={progress.events}
-            seconds={progress.seconds}
-          />
-        )}
+        <DeploymentSteps
+          current={progress.current}
+          events={progress.events}
+          seconds={progress.seconds}
+          running={busy}
+          failed={failed}
+        />
         {phase !== "idle" && !progress.current && (
           <p role="status" className="setup-help">
             {t(`cloudflare.${phase}`)}
           </p>
-        )}
-        {authorizationError && (
-          <ErrorNotice
-            title={t("cloudflare.authorizationFailed")}
-            detail={authorizationError}
-            dismiss={() => setAuthorizationError(null)}
-          />
         )}
         {(progress.current?.stage === "authorization" ||
           (!progress.events.length && phase === "authorization")) && (
@@ -340,7 +332,9 @@ export function CloudflareSetup({
               onClick={() =>
                 void api
                   .openCloudflareAuthorization()
-                  .catch((error) => setAuthorizationError(errorText(error)))
+                  .catch((error) =>
+                    fail("cloudflare.authorizationFailed", error),
+                  )
               }
             >
               {t("cloudflare.openBrowser")}
@@ -350,7 +344,9 @@ export function CloudflareSetup({
               onClick={() =>
                 void api
                   .cancelCloudflareAuthorization()
-                  .catch((error) => setAuthorizationError(errorText(error)))
+                  .catch((error) =>
+                    fail("cloudflare.authorizationFailed", error),
+                  )
               }
             >
               {t("cloudflare.cancel")}

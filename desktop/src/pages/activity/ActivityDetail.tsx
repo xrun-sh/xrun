@@ -2,13 +2,13 @@ import { useEffect, useState } from "react";
 import { api, type Job } from "../../api";
 import { errorCode } from "../../errors";
 import { Icon } from "../../components/Icon";
-import { Identifier } from "../../components/Identifier";
 import { ErrorNotice } from "../../components/ErrorNotice";
-import { duration, errorText, isRunning, dateTime } from "../../format";
+import { errorText, isRunning } from "../../format";
 import { t } from "../../i18n";
+import { ActivityFacts, ActivityIdentifiers } from "./ActivityFacts";
 import { ActivityState } from "./ActivityState";
 import { AttachmentPanel } from "./AttachmentPanel";
-import { jobDescription, jobDuration, operationLabel } from "./operation";
+import { jobDescription, operationLabel } from "./operation";
 interface Props {
   selection: { job: Job; dbId: string };
   active: boolean;
@@ -82,10 +82,6 @@ export function ActivityDetail({
     onLoading(loading || previewLoading);
     return () => onLoading(false);
   }, [loading, previewLoading, onLoading]);
-  const elapsed = jobDuration(job);
-  const command =
-    job.kind === "stream_exec" || job.kind === "exec" ? job.result : null;
-  const cwd = "cwd" in job.params ? job.params.cwd : null;
   const attachmentError =
     job.result && "attachment_error" in job.result
       ? job.result.attachment_error
@@ -108,70 +104,14 @@ export function ActivityDetail({
         {jobDescription(job) && (
           <p className="activity-description mono">{jobDescription(job)}</p>
         )}
-        <div className="activity-detail-meta">
-          <span>
-            {t("activity.source", { name: deviceLabel(job.source_device_id) })}
-          </span>
-          <span>{dateTime(job.created_at_ms)}</span>
-        </div>
-        <details className="activity-detail-facts">
-          <summary>{t("activity.technicalDetails")}</summary>
-          <div className="panel-row">
-            <span>Job ID</span>
-            <code>{job.job_id}</code>
-          </div>
-          <div className="panel-row">
-            <span>{t("output.sourceId")}</span>
-            <Identifier
-              value={job.source_device_id}
-              label={t("output.sourceId")}
-            />
-          </div>
-          <div className="panel-row">
-            <span>request_id</span>
-            <code>{job.request_id}</code>
-          </div>
-          {cwd && (
-            <div className="panel-row">
-              <span>{t("output.cwd")}</span>
-              <code>{cwd}</code>
-            </div>
-          )}
-          {job.started_at_ms !== null && (
-            <div className="panel-row">
-              <span>{t("output.startedAt")}</span>
-              <span>{dateTime(job.started_at_ms)}</span>
-            </div>
-          )}
-        </details>
-        {elapsed !== null && (
-          <div className="panel-row">
-            <span>
-              {t("activity.duration", { duration: duration(elapsed) })}
-            </span>
-            {command && (
-              <span>
-                {command.signal !== null
-                  ? t("output.signal", { signal: command.signal })
-                  : command.exit_code !== null
-                    ? t("output.exitCode", { code: command.exit_code })
-                    : t("output.noExitCode")}
-              </span>
-            )}
-          </div>
-        )}
-        {job.finished_at_ms !== null && (
-          <div className="panel-row">
-            <span>{t("activity.endedAt")}</span>
-            <span>{dateTime(job.finished_at_ms)}</span>
-          </div>
-        )}
+        <ActivityFacts job={job} source={deviceLabel(job.source_device_id)} />
         {job.error_message && (
           <p className="inline-notice">{job.error_message}</p>
         )}
         {job.leftover_possible && (
           <p className="inline-notice">{t("output.leftover")}</p>
         )}
+        <ActivityIdentifiers job={job} />
       </article>
       {job.attachments.map((attachment) => (
         <AttachmentPanel

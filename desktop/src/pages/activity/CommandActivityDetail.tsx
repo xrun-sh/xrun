@@ -1,15 +1,19 @@
 import { useLayoutEffect, useRef, useState } from "react";
 import type { Status } from "../../api";
 import { Icon } from "../../components/Icon";
-import { Identifier } from "../../components/Identifier";
 import { ErrorNotice } from "../../components/ErrorNotice";
 import { Select } from "../../components/Select";
-import { commandText, duration, isRunning, dateTime } from "../../format";
+import { isRunning } from "../../format";
 import { t } from "../../i18n";
+import { ActivityFacts, ActivityIdentifiers } from "./ActivityFacts";
 import { ActivityState } from "./ActivityState";
+import { isScript, jobDescription } from "./operation";
+import { ScriptPanel } from "./ScriptPanel";
 import { useCommandOutput, type CommandSelection } from "./useCommandOutput";
 interface DetailProps {
   selection: CommandSelection;
+  /** First meaningful line of a script whose body is still kept. */
+  scriptTitle?: string;
   active: boolean;
   paused: boolean;
   refreshVersion: number;
@@ -22,6 +26,7 @@ interface DetailProps {
 
 export function CommandActivityDetail({
   selection,
+  scriptTitle,
   active,
   paused,
   refreshVersion,
@@ -45,6 +50,7 @@ export function CommandActivityDetail({
   }, [revision, follow, stream]);
 
   const source = deviceLabel(job.source_device_id);
+  const script = isScript(job);
   const warnings = [];
   if (job.error_message) warnings.push(job.error_message);
   if (!job.output_complete) {
@@ -63,21 +69,6 @@ export function CommandActivityDetail({
   if (job.leftover_possible) warnings.push(t("output.leftover"));
   if (isRunning(job) && status && !status.local.daemon_running)
     warnings.push(t("output.stale"));
-  const elapsed =
-    job.result != null
-      ? duration(job.result?.duration_ms)
-      : isRunning(job)
-        ? t("output.elapsed", {
-            duration: duration(Math.max(0, Date.now() - job.created_at_ms)),
-          })
-        : "—";
-  const result = job.result?.signal
-    ? t("output.signal", { signal: job.result?.signal })
-    : job.result?.exit_code != null
-      ? t("output.exitCode", { code: job.result?.exit_code })
-      : isRunning(job)
-        ? t("output.notFinished")
-        : t("output.noExitCode");
 
   return (
     <section id="command-activity-detail">
@@ -90,42 +81,20 @@ export function CommandActivityDetail({
       </button>
       <article className="panel command-heading">
         <div className="activity-detail-title">
-          <h2 className="mono">{commandText(job.params)}</h2>
+          <h2 className={script && scriptTitle === undefined ? "" : "mono"}>
+            {jobDescription(job, scriptTitle)}
+          </h2>
           <ActivityState job={job} />
         </div>
-        <div className="activity-detail-meta">
-          <span>{t("activity.source", { name: source })}</span>
-          <span>{t("activity.duration", { duration: elapsed })}</span>
-          <span>{result}</span>
-        </div>
-        <details className="activity-detail-facts">
-          <summary>{t("activity.technicalDetails")}</summary>
-          <div className="panel-row">
-            <span>Job ID</span>
-            <code>{job.job_id}</code>
-          </div>
-          <div className="panel-row">
-            <span>{t("output.sourceId")}</span>
-            <Identifier
-              value={job.source_device_id}
-              label={t("output.sourceId")}
-            />
-          </div>
-          <div className="panel-row">
-            <span>{t("output.cwd")}</span>
-            <code>{job.params.cwd}</code>
-          </div>
-          <div className="panel-row">
-            <span>{t("output.startedAt")}</span>
-            <span>{dateTime(job.created_at_ms)}</span>
-          </div>
-        </details>
+        <ActivityFacts job={job} source={source} />
+        <ActivityIdentifiers job={job} />
       </article>
       {!!warnings.length && (
         <p id="command-warning" className="inline-notice" role="status">
           {warnings.join(" ")}
         </p>
       )}
+      {script && <ScriptPanel dbId={selection.dbId} job={job} />}
       <section className="panel output-panel">
         <div className="output-toolbar">
           <strong>{t("output.title")}</strong>

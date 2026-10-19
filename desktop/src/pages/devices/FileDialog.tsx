@@ -19,40 +19,41 @@ export function FileDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef(false);
-  const { busy: otherBusy } = useOperations();
+  const { busy: otherBusy, fail, clearError } = useOperations();
   const [direction, setDirection] = useState<"upload" | "download">("upload");
   const [remote, setRemote] = useState("");
   const [mkdir, setMkdir] = useState(false);
   const [replace, setReplace] = useState(false);
   const [receipts, setReceipts] = useState<TransferReceipt[]>([]);
   const [result, setResult] = useState<FileTransfer | null>(null);
-  const [failure, setFailure] = useState<string | null>(null);
+  // Transfers report through the shared notice; the recovery list fails in place.
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const refresh = useCallback(
-    async () => setReceipts(await api.fileReceipts(device.device_id)),
-    [device.device_id],
-  );
+  const refresh = useCallback(async () => {
+    try {
+      setReceipts(await api.fileReceipts(device.device_id));
+      setLoadFailure(null);
+    } catch (error) {
+      setLoadFailure(errorText(error));
+    }
+  }, [device.device_id]);
   useEffect(() => {
     dialog.current?.showModal();
-    void refresh().catch((error) => setFailure(errorText(error)));
+    void refresh();
   }, [refresh]);
   const operate = async (work: () => Promise<FileTransfer | null>) => {
     if (pending.current || otherBusy) return;
     pending.current = true;
     setBusy(true);
-    setFailure(null);
+    clearError();
     setResult(null);
     try {
       const value = await work();
       if (value) setResult(value);
     } catch (error) {
-      setFailure(errorText(error));
+      fail("files.failed", error);
     } finally {
-      try {
-        await refresh();
-      } catch (error) {
-        setFailure((previous) => previous || errorText(error));
-      }
+      await refresh();
       pending.current = false;
       setBusy(false);
     }
@@ -159,11 +160,11 @@ export function FileDialog({
           )}
         </button>
       </form>
-      {failure && (
+      {loadFailure && (
         <ErrorNotice
-          title={t("files.failed")}
-          detail={failure}
-          dismiss={() => setFailure(null)}
+          title={t("files.pendingFailed")}
+          detail={loadFailure}
+          retry={() => void refresh()}
         />
       )}
       {result && (

@@ -1,11 +1,11 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import type { Device, Status } from "../api";
 import { useOperations } from "../app/useOperations";
 import type { useDevices } from "../app/useDevices";
 import { Icon } from "../components/Icon";
 import { compactIdentifier } from "../format";
 import { t } from "../i18n";
-import { ErrorNotice } from "../components/ErrorNotice";
+import { ErrorNotice, StaleNotice } from "../components/ErrorNotice";
 import { NetworkSetup } from "../components/NetworkSetup";
 import { TrafficSummary } from "../components/TrafficSummary";
 import { RefreshButton } from "../components/RefreshButton";
@@ -22,10 +22,9 @@ interface Props {
   paused: boolean;
   status: Status | null;
   members: ReturnType<typeof useDevices>;
-  feedback: ReactNode;
 }
-export function Devices({ active, paused, status, members, feedback }: Props) {
-  const { busy, pending, confirm, action, clearError } = useOperations();
+export function Devices({ active, paused, status, members }: Props) {
+  const { busy, pending, confirm, action, clearError, error } = useOperations();
   const { loading, refreshing, error: listError, message, refresh } = members;
   const devices = members.devices.filter(
     (device) => device.device_id !== status?.local.device_id,
@@ -139,7 +138,6 @@ export function Devices({ active, paused, status, members, feedback }: Props) {
           </button>
         )}
       </div>
-      {!inviteOpen && !commandDevice && feedback}
       <NetworkSetup
         joined={joined}
         busy={busy}
@@ -147,20 +145,26 @@ export function Devices({ active, paused, status, members, feedback }: Props) {
         startFailed={
           !!status?.error && status.error.code === "SERVICE_START_FAILED"
         }
+        failureCode={error?.code}
         action={action}
         onCreated={() => {}}
       />
       {joined && (
         <>
-          {listError && (
-            <ErrorNotice
-              title={t(
-                devices.length ? "devices.refreshFailed" : "devices.listFailed",
-              )}
-              detail={listError}
-              retry={() => void refresh()}
-            />
-          )}
+          {listError &&
+            (devices.length ? (
+              <StaleNotice
+                text={t("devices.refreshFailed")}
+                detail={listError}
+                retry={() => void refresh()}
+              />
+            ) : (
+              <ErrorNotice
+                title={t("devices.listFailed")}
+                detail={listError}
+                retry={() => void refresh()}
+              />
+            ))}
           <div className="list-toolbar">
             <div
               className="segmented"
@@ -267,7 +271,6 @@ export function Devices({ active, paused, status, members, feedback }: Props) {
           close={() => setInviteOpen(false)}
           active={active}
           status={status}
-          feedback={feedback}
         />
       )}
       {commandDevice && (
@@ -280,7 +283,6 @@ export function Devices({ active, paused, status, members, feedback }: Props) {
           }
           active={active && !paused}
           close={() => setCommandDevice(null)}
-          feedback={feedback}
         />
       )}
       {fileDevice && (

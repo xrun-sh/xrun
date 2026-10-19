@@ -258,8 +258,9 @@ impl Cache {
         )?;
         db.busy_timeout(std::time::Duration::from_millis(500))?;
         let now = now_ms();
+        let cutoff = now.saturating_sub(i64::from(days) * DAY_MS);
         let ids:Vec<String>=db.prepare("SELECT attachment_id FROM job_attachments WHERE status='available' AND created_at_ms<=?1")?
-            .query_map([now.saturating_sub(i64::from(days)*DAY_MS)],|row|row.get(0))?.collect::<rusqlite::Result<_>>()?;
+            .query_map([cutoff],|row|row.get(0))?.collect::<rusqlite::Result<_>>()?;
         for id in ids {
             match std::fs::remove_file(self.path(&id)?) {
                 Ok(()) => {}
@@ -272,6 +273,11 @@ impl Cache {
                 rusqlite::params![id, now],
             )?;
         }
+        // Script bodies follow the same retention; their size and digest stay with the job.
+        db.execute(
+            "UPDATE job_scripts SET body=NULL WHERE body IS NOT NULL AND created_at_ms<=?1",
+            [cutoff],
+        )?;
         Ok(())
     }
     // Called only at daemon startup, before accepting operations, so an in-flight

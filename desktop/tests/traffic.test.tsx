@@ -74,12 +74,18 @@ test("network traffic keeps the last snapshot on failure and offers retry", asyn
   await within(panel).findAllByText("2.0 KiB");
   fail = true;
   await poll();
-  await within(panel).findByText("流量统计未能读取，请重试。");
+  const stale = await within(panel).findByText(
+    "流量未能刷新，当前显示上次读取的数据。",
+  );
+  expect(stale.title).toContain("relay offline");
+  expect(within(panel).queryByRole("alert")).toBeNull();
   expect(within(panel).getAllByText("2.0 KiB").length).toBeGreaterThan(0);
   fail = false;
   fireEvent.click(within(panel).getByRole("button", { name: "重试" }));
   await waitFor(() =>
-    expect(within(panel).queryByText("流量统计未能读取，请重试。")).toBeNull(),
+    expect(
+      within(panel).queryByText("流量未能刷新，当前显示上次读取的数据。"),
+    ).toBeNull(),
   );
 });
 

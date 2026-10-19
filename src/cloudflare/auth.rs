@@ -470,6 +470,11 @@ impl Authorization {
     }
 }
 
+/// Show callback pages in the App's language instead of the browser's.
+pub(crate) fn set_callback_language(chinese: Option<bool>) {
+    callback::set_language(chinese);
+}
+
 struct CallbackServer(tokio::task::AbortHandle);
 impl Drop for CallbackServer {
     fn drop(&mut self) {

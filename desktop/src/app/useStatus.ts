@@ -17,7 +17,6 @@ export function useStatus(
   const [error, setError] = useState<string | null>(null);
   const request = useRef(0);
   const loading = useRef(false);
-  const dismissed = useRef<string | null>(null);
   const refresh = useCallback(async () => {
     const token = ++request.current;
     loading.current = true;
@@ -25,14 +24,10 @@ export function useStatus(
       const value = await api.status();
       if (token !== request.current) return null;
       setStatus(value);
-      if (!value.error) dismissed.current = null;
-      const detail = value.error ? errorText(value.error) : null;
-      setError(detail === dismissed.current ? null : detail);
+      setError(value.error ? errorText(value.error) : null);
       return value;
     } catch (failure) {
-      const detail = errorText(failure);
-      if (token === request.current && detail !== dismissed.current)
-        setError(detail);
+      if (token === request.current) setError(errorText(failure));
       return null;
     } finally {
       if (token === request.current) loading.current = false;
@@ -55,10 +50,6 @@ export function useStatus(
       clearInterval(timer);
     };
   }, [interactionState, refresh, visible]);
-  const dismiss = useCallback((detail: string) => {
-    dismissed.current = detail;
-    setError(null);
-  }, []);
   const clearError = useCallback(() => setError(null), []);
-  return { status, error, refresh, dismiss, clearError };
+  return { status, error, refresh, clearError };
 }

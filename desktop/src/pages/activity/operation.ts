@@ -1,5 +1,5 @@
-import type { Attachment, Job } from "../../api";
-import { commandText } from "../../format";
+import type { Attachment, CommandParams, Job } from "../../api";
+import { commandText, fileSize } from "../../format";
 import { t } from "../../i18n";
 
 export function operationLabel(op: string) {
@@ -14,9 +14,24 @@ export function operationLabel(op: string) {
   return labels[op] || op;
 }
 
-export function jobDescription(job: Job) {
+/** A script names an interpreter and sends its body as input instead of a program. */
+export function isScript(job: Job) {
+  return (
+    (job.kind === "exec" || job.kind === "stream_exec") &&
+    !!job.params.shell &&
+    !job.params.program
+  );
+}
+/** Scripts whose body was not kept are named by their interpreter and size. */
+export function scriptLabel(params: CommandParams) {
+  return `${t("job.scriptWith", { shell: params.shell ?? "" })}${fileSize(params.input_size)}`;
+}
+/** A script's title is its first meaningful line, while its body is kept. */
+export function jobDescription(job: Job, scriptTitle?: string) {
   if (job.kind === "exec" || job.kind === "stream_exec")
-    return commandText(job.params);
+    return isScript(job)
+      ? (scriptTitle ?? scriptLabel(job.params))
+      : commandText(job.params);
   if (job.kind === "push" || job.kind === "pull")
     return job.result?.path || job.params.path;
   if (job.kind === "forward") return `localhost:${job.params.port}`;

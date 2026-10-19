@@ -8,33 +8,43 @@ pub(super) enum PageState {
 }
 
 pub(super) fn page(state: PageState, chinese: bool, detail: Option<&str>) -> Html<String> {
-    let (title, message) = match (&state, chinese) {
-        (PageState::Received, true) => ("授权已返回", "后续操作会在 xrun 中继续。"),
-        (PageState::Received, false) => (
-            "Authorization returned",
-            "Continue in xrun to see progress and results.",
+    let text = |english: &'static str, translated: &'static str| {
+        if chinese { translated } else { english }
+    };
+    // Icons share the page's 24-unit stroke style.
+    let (name, icon, title, message) = match state {
+        PageState::Received => (
+            "received",
+            r#"<path d="m5.5 12.5 4 4 9-9"/>"#,
+            text("Authorization complete", "授权成功"),
+            text("Return to xrun to continue.", "回到 xrun 继续操作。"),
         ),
-        (PageState::Declined, true) => ("授权未完成", "请回到 xrun 查看错误详情后重试。"),
-        (PageState::Declined, false) => (
-            "Authorization incomplete",
-            "Return to xrun to review the error and retry.",
+        PageState::Declined => (
+            "declined",
+            r#"<path d="m7.5 7.5 9 9m0-9-9 9"/>"#,
+            text("Authorization not completed", "授权未完成"),
+            text("Return to xrun to try again.", "回到 xrun 重新发起授权。"),
         ),
-        (PageState::Invalid, true) => ("回调无效", "请从 xrun 重新发起授权。"),
-        (PageState::Invalid, false) => ("Invalid callback", "Start a new authorization from xrun."),
-        (PageState::Finished, true) => ("此授权已结束", "请回到 xrun 查看结果，或重新发起授权。"),
-        (PageState::Finished, false) => (
-            "Authorization ended",
-            "Return to xrun for the result or start a new authorization.",
+        PageState::Invalid => (
+            "invalid",
+            r#"<path d="M12 7v6m0 4v.01"/>"#,
+            text("Invalid link", "链接无效"),
+            text(
+                "Start a new authorization from xrun.",
+                "请从 xrun 重新发起授权。",
+            ),
+        ),
+        PageState::Finished => (
+            "finished",
+            r#"<circle cx="12" cy="12" r="8"/><path d="M12 8v4l2.5 2.5"/>"#,
+            text("Authorization already finished", "授权已结束"),
+            text("Return to xrun to see the result.", "回到 xrun 查看结果。"),
         ),
     };
     let details = detail.map_or_else(String::new, |detail| {
         format!(
             "<details><summary>{}</summary><pre>{}</pre></details>",
-            if chinese {
-                "错误详情"
-            } else {
-                "Error details"
-            },
+            text("Error details", "错误信息"),
             escape(detail)
         )
     });
@@ -42,24 +52,19 @@ pub(super) fn page(state: PageState, chinese: bool, detail: Option<&str>) -> Htm
     let logo = logo.split_once("?>").map_or(logo, |(_, svg)| svg).trim();
     Html(
         include_str!("page.html")
-            .replace("%%LANG%%", if chinese { "zh-CN" } else { "en" })
+            // The desktop's colors, radii and fonts, including its dark theme.
             .replace(
-                "%%STATE%%",
-                if matches!(state, PageState::Received | PageState::Finished) {
-                    "received"
-                } else {
-                    "failed"
-                },
+                "%%TOKENS%%",
+                include_str!("../../../../desktop/src/styles/tokens.css"),
             )
+            .replace("%%LANG%%", if chinese { "zh-CN" } else { "en" })
+            .replace("%%STATE%%", name)
+            .replace("%%ICON%%", icon)
             .replace("%%TITLE%%", title)
             .replace("%%MESSAGE%%", message)
             .replace(
                 "%%FOOTER%%",
-                if chinese {
-                    "可以关闭此页"
-                } else {
-                    "You may close this page"
-                },
+                text("You can close this page.", "可以关闭此页面。"),
             )
             .replace("%%BRAND%%", logo)
             // Provider text is inserted last so it cannot introduce template replacements.

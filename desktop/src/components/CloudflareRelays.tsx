@@ -15,7 +15,7 @@ export function CloudflareRelays({
   networkId?: string;
   manager: boolean;
 }) {
-  const { busy, operate, notify } = useOperations();
+  const { busy, operate, notify, fail } = useOperations();
   const [relays, setRelays] = useState<RelayDeployment[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [revision, setRevision] = useState(0);
@@ -149,7 +149,7 @@ export function CloudflareRelays({
             onClick={() =>
               void api
                 .openCloudflareAuthorization()
-                .catch((error) => setError(errorText(error)))
+                .catch((error) => fail("cloudflare.authorizationFailed", error))
             }
           >
             {t("cloudflare.openBrowser")}
@@ -158,7 +158,7 @@ export function CloudflareRelays({
             onClick={() =>
               void api
                 .cancelCloudflareAuthorization()
-                .catch((error) => setError(errorText(error)))
+                .catch((error) => fail("cloudflare.authorizationFailed", error))
             }
           >
             {t("cloudflare.cancel")}

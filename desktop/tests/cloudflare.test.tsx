@@ -129,6 +129,86 @@ test("deployment survives a connection failure and retry does not redeploy the W
   ).toEqual([false, true]);
 });
 
+test("deployment steps stay after a failure, mark where it stopped and resume past the relay", async () => {
+  let attempts = 0;
+  let release!: () => void;
+  let current!: Status;
+  const paused = () =>
+    new Promise<void>((resolve) => {
+      release = resolve;
+    });
+  const { status } = await fixture(
+    {
+      cloudflare_accounts: async (args) => {
+        await deploymentEvent(args, "accounts", "completed", {
+          operation: "cloudflare_accounts",
+        });
+        return [account];
+      },
+      create_cloudflare_network: async (args) => {
+        if (++attempts === 1) {
+          await deploymentEvent(args, "worker_upload", "completed");
+          await deploymentEvent(args, "deployed", "completed", {
+            deployment: relay,
+          });
+          await deploymentEvent(args, "relay_check", "completed");
+          await deploymentEvent(args, "network_creation");
+          await paused();
+          await deploymentEvent(args, "network_creation", "failed", {
+            error: { code: "CONNECT_TIMEOUT", message: "unavailable" },
+          });
+          throw "CONNECT_TIMEOUT: unavailable";
+        }
+        await deploymentEvent(args, "deployed", "completed", {
+          deployment: relay,
+        });
+        await deploymentEvent(args, "relay_check");
+        await paused();
+        current.local.joined = true;
+        return relay;
+      },
+    },
+    false,
+  );
+  current = status;
+  const steps = () =>
+    [...document.querySelectorAll(".deployment-step-list li")].map(
+      (step) =>
+        `${step.querySelector(".step-label")?.textContent}:${step.className}`,
+    );
+  fireEvent.click(screen.getByRole("button", { name: "新建网络" }));
+  await create();
+  await screen.findByText(/正在创建网络 ·/);
+  expect(steps()).toEqual([
+    "授权:done",
+    "部署中转:done",
+    "创建网络:current",
+    "启动服务:pending",
+  ]);
+  const progress = screen.getByRole("progressbar", { name: "部署进度" });
+  expect(Number(progress.getAttribute("aria-valuenow"))).toBeGreaterThan(50);
+  await act(async () => release());
+  await screen.findByText("创建网络未完成");
+  expect(steps()).toEqual([
+    "授权:done",
+    "部署中转:done",
+    "创建网络:failed",
+    "启动服务:pending",
+  ]);
+  expect(screen.getByRole("alert").textContent).toContain("CONNECT_TIMEOUT");
+  await create();
+  await screen.findByText(/正在检查连接 ·/);
+  expect(screen.queryByText("创建网络未完成")).toBeNull();
+  expect(steps()).toEqual([
+    "授权:done",
+    "部署中转:done",
+    "创建网络:current",
+    "启动服务:pending",
+  ]);
+  await act(async () => release());
+  await screen.findByRole("button", { name: "邀请设备" });
+});
+
 test("authorization can reopen the browser and cancel without deployment or saved identity", async () => {
   let finish!: (value: null) => void;
   const authorization = new Promise<null>((resolve) => {
@@ -136,11 +216,14 @@ test("authorization can reopen the browser and cancel without deployment or save
   });
   const { calls } = await fixture(
     {
-      cloudflare_accounts: async () => {
+      cloudflare_accounts: async (args) => {
         await emit(
           "xrun-cloudflare-authorization",
           "https://dash.cloudflare.com/oauth2/auth?state=test",
         );
+        await deploymentEvent(args, "authorization", "waiting", {
+          operation: "cloudflare_accounts",
+        });
         return authorization;
       },
       cancel_cloudflare_authorization: () => {
@@ -151,7 +234,8 @@ test("authorization can reopen the browser and cancel without deployment or save
   );
   fireEvent.click(screen.getByRole("button", { name: "新建网络" }));
   fireEvent.submit(document.getElementById("cloudflare-create-form")!);
-  await screen.findByText("请在浏览器完成授权。");
+  await screen.findByText(/等待浏览器授权 ·/);
+  expect(screen.getByRole("progressbar", { name: "部署进度" })).toBeTruthy();
   await act(async () =>
     fireEvent.click(screen.getByRole("button", { name: "打开授权页面" })),
   );
@@ -174,6 +258,8 @@ test("authorization can reopen the browser and cancel without deployment or save
         call.command === "connect",
     ),
   ).toBe(false);
+  expect(screen.queryByRole("progressbar")).toBeNull();
+  expect(screen.queryByRole("alert")).toBeNull();
 });
 
 test("saved deployment display copies a full private link only on request", async () => {

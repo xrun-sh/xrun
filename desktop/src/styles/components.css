@@ -435,11 +435,94 @@ main > .error-notice {
   margin-top: 8px;
 }
 
-.toast {
+/* Success and failure notices share the bottom center and never move the page. */
+.notices {
   position: absolute;
+  left: 16px;
+  right: 16px;
   bottom: 22px;
-  left: 50%;
-  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+}
+
+/* Over a modal dialog they follow the window; they appear once the dialog has
+   settled, because its opening transform would otherwise anchor them to it. */
+.notices.over-dialog {
+  position: fixed;
+  animation: notices-enter 0.12s ease 0.16s backwards;
+}
+
+@keyframes notices-enter {
+  from {
+    opacity: 0;
+  }
+}
+
+.failure-notice {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  width: min(440px, 100%);
+  padding: 12px 8px 12px 14px;
+  border: 1px solid var(--danger-border);
+  border-radius: var(--radius-lg);
+  background: var(--card);
+  color: var(--text);
+  box-shadow: var(--menu-shadow);
+  font-size: 13px;
+  pointer-events: auto;
+  animation: toast-enter 0.16s ease;
+}
+
+.failure-notice > .icon {
+  width: 16px;
+  height: 16px;
+  margin-top: 2px;
+  flex-shrink: 0;
+  color: var(--danger);
+}
+
+.failure-content {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.failure-content strong {
+  display: block;
+  font-weight: 600;
+  line-height: 1.45;
+}
+
+.failure-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.failure-actions button {
+  font-size: 12.5px;
+  min-height: 28px;
+}
+
+.failure-notice > .icon-button {
+  width: 26px;
+  height: 26px;
+  min-height: 26px;
+  margin-top: -3px;
+}
+
+.failure-notice > .icon-button .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.toast {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -449,23 +532,43 @@ main > .error-notice {
   border-radius: 20px;
   font-size: 13px;
   box-shadow: var(--menu-shadow);
-  z-index: 6;
-  max-width: calc(100% - 32px);
+  max-width: 100%;
   width: max-content;
   overflow-wrap: anywhere;
-  pointer-events: none;
   animation: toast-enter 0.16s ease;
 }
 
 @keyframes toast-enter {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
+    transform: translateY(4px);
   }
   to {
     opacity: 1;
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(0);
   }
+}
+
+/* A failed background refresh keeps the last data and only says it may be outdated. */
+.stale-notice {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.stale-notice > .icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--warning);
+}
+
+.stale-notice .text-button {
+  min-height: 24px;
+  font-size: 12.5px;
 }
 
 .toast .icon {

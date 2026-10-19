@@ -25,7 +25,8 @@ export type IconName =
   | "transfer"
   | "camera"
   | "chevron-right"
-  | "network";
+  | "network"
+  | "alert";
 
 export function Icon({
   name,
@@ -45,6 +46,10 @@ export function IconDefinitions() {
   return (
     <svg className="icon-defs" aria-hidden="true">
       <defs>
+        <symbol id="i-alert" viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="9" />
+          <path d="M12 7.5v5.5m0 3.5v.01" />
+        </symbol>
         <symbol id="i-chevron-down" viewBox="0 0 24 24">
           <path d="m6 9 6 6 6-6" />
         </symbol>

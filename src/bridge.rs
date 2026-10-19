@@ -324,9 +324,20 @@ impl Bridge {
                 params!(params, db_id: String, id: String);
                 blocking(move || client::history::job(&db_id, &id)).await
             }
+            "activity_script" => {
+                params!(params, db_id: String, id: String);
+                blocking(move || client::history::script(&db_id, &id)).await
+            }
             "activity_history" => {
-                params!(params, before: Option<String>, filter: String);
-                blocking(move || client::history::activity(before.as_deref(), &filter)).await
+                params!(
+                    params,
+                    before: Option<String>,
+                    filter: String,
+                    search: Option<Vec<client::history::SearchTerm>>,
+                );
+                let search = search.unwrap_or_default();
+                blocking(move || client::history::activity(before.as_deref(), &filter, &search))
+                    .await
             }
             "activity_attachment" => {
                 params!(params, id: String);
@@ -433,7 +444,9 @@ impl Bridge {
                     remember: Option<bool>,
                     progress_id: Option<String>,
                     finish_temporary: Option<bool>,
+                    chinese: Option<bool>,
                 );
+                relay::set_authorization_page_language(chinese);
                 let remember = remember.unwrap_or(false);
                 let finish = finish_temporary.unwrap_or(false);
                 self.cloudflare_accounts(request, reauthorize, remember, progress_id, finish)
@@ -644,7 +657,9 @@ impl Bridge {
             region: Option<relay::Region>,
             resume: bool,
             progress_id: String,
+            chinese: Option<bool>,
         );
+        relay::set_authorization_page_language(chinese);
         let reporter = self.reporter(request, Some(progress_id), "create_cloudflare_network");
         let prompt = self.prompt(request);
         let result: Result<DeployedRelay> = reporter

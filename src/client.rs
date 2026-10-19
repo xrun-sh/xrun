@@ -37,7 +37,10 @@ pub async fn traffic(
 /// activity reads can clean expired attachment cache copies.
 pub mod history {
     pub use crate::attachments::{Attachment, AttachmentMetadata, AttachmentPreview};
-    pub use crate::history::{ActivityPage, activity, attachment, job, save_attachment};
+    pub use crate::history::{
+        ActivityPage, ActivityScript, SearchTerm, activity, attachment, job, save_attachment,
+        script,
+    };
     pub use crate::history::{JobOutput, output};
 }
 

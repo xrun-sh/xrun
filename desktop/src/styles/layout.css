@@ -159,6 +159,32 @@
 .local-device-state .dot {
   flex-shrink: 0;
 }
+.local-device-problem {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 7px;
+  min-height: 30px;
+  margin-top: 4px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 7px;
+  background: var(--warning-bg);
+  color: var(--warning);
+  font-size: 12px;
+  font-weight: 500;
+  text-align: left;
+}
+.local-device-problem:hover:not(:disabled) {
+  background: var(--warning-bg);
+  text-decoration: underline;
+}
+.local-device-problem .icon {
+  width: 14px;
+  height: 14px;
+}
+.sidebar > .local-device-problem {
+  margin-top: 12px;
+}
 .local-device-state .warning {
   color: var(--warning);
 }
@@ -314,6 +340,13 @@ main {
   .local-device-identity {
     padding: 3px;
     min-height: 0;
+  }
+  .local-device-problem {
+    justify-content: center;
+    padding: 4px;
+  }
+  .local-device-problem span {
+    display: none;
   }
   main {
     padding: 20px 18px 24px;

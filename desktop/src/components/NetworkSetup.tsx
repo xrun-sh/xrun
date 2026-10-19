@@ -10,6 +10,8 @@ interface Props {
   busy: boolean;
   pending: PendingOperation | null;
   startFailed: boolean;
+  /** Code of the failure currently shown, to mark the field it concerns. */
+  failureCode?: string;
   action: Action;
   onCreated: () => void;
 }
@@ -47,6 +49,7 @@ export function NetworkSetup({
   busy,
   pending,
   startFailed,
+  failureCode,
   action,
   onCreated,
 }: Props) {
@@ -58,6 +61,12 @@ export function NetworkSetup({
   const [allowManager, setAllowManager] = useState(true);
   const [retry, setRetry] = useState(false);
   const submitting = useRef(false);
+  // The failure notice explains a rejected code; the field it came from is marked until edited.
+  const rejected =
+    retry &&
+    ["INVALID_CODE", "CODE_EXPIRED", "CODE_LOCKED", "CODE_IN_USE"].includes(
+      failureCode ?? "",
+    );
   const trimmedLink =
     method === "code"
       ? `xrun://${relayAddress
@@ -206,6 +215,7 @@ export function NetworkSetup({
                   className="access-code-input mono"
                   type="text"
                   placeholder="K7M4-P9Q2"
+                  aria-invalid={rejected || undefined}
                   required
                   disabled={busy}
                   autoComplete="off"
@@ -225,6 +235,7 @@ export function NetworkSetup({
                   id="setup-link"
                   type="password"
                   placeholder="xrun://… / xrun-relay://… / https://…"
+                  aria-invalid={rejected || undefined}
                   autoComplete="off"
                   spellCheck={false}
                   required

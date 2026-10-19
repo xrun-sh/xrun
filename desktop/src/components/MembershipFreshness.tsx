@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import { useOperations } from "../app/useOperations";
 import { errorText } from "../errors";
 import { t } from "../i18n";
 import { Select } from "./Select";
@@ -8,7 +9,20 @@ import { ErrorNotice } from "./ErrorNotice";
 export function MembershipFreshness() {
   const [minutes, setMinutes] = useState(15);
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
+  const { fail, clearError } = useOperations();
+  const save = async (value: number) => {
+    setBusy(true);
+    clearError();
+    try {
+      await api.saveMembershipLease(value);
+      setMinutes(value);
+    } catch (error) {
+      fail("freshness.failed", error, () => void save(value));
+    } finally {
+      setBusy(false);
+    }
+  };
   useEffect(() => {
     let active = true;
     void api
@@ -17,7 +31,7 @@ export function MembershipFreshness() {
         if (active) setMinutes(settings.membership_lease_minutes || 15);
       })
       .catch((error) => {
-        if (active) setFailure(errorText(error));
+        if (active) setLoadFailure(errorText(error));
       });
     return () => {
       active = false;
@@ -42,26 +56,11 @@ export function MembershipFreshness() {
             value: String(value),
             label: t("freshness.minutes", { minutes: value }),
           }))}
-          onChange={async (value) => {
-            setBusy(true);
-            setFailure(null);
-            try {
-              await api.saveMembershipLease(Number(value));
-              setMinutes(Number(value));
-            } catch (error) {
-              setFailure(errorText(error));
-            } finally {
-              setBusy(false);
-            }
-          }}
+          onChange={(value) => void save(Number(value))}
         />
       </div>
-      {failure && (
-        <ErrorNotice
-          title={t("freshness.failed")}
-          detail={failure}
-          dismiss={() => setFailure(null)}
-        />
+      {loadFailure && (
+        <ErrorNotice title={t("freshness.loadFailed")} detail={loadFailure} />
       )}
     </section>
   );

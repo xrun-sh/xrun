@@ -1,5 +1,5 @@
 import { t } from "../../i18n";
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import type { Status } from "../../api";
 import { InvitePanel } from "../../components/InvitePanel";
 import { Icon } from "../../components/Icon";
@@ -9,15 +9,8 @@ interface Props {
   close: () => void;
   active: boolean;
   status: Status | null;
-  feedback: ReactNode;
 }
-export function InvitationDialog({
-  open,
-  close,
-  active,
-  status,
-  feedback,
-}: Props) {
+export function InvitationDialog({ open, close, active, status }: Props) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     if (open && dialog.current && !dialog.current.open)
@@ -45,7 +38,6 @@ export function InvitationDialog({
       </div>
       {open && (
         <>
-          <div>{feedback}</div>
           <InvitePanel active={active && open} status={status} />
         </>
       )}

@@ -5,6 +5,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { Profiler } from "react";
 import { fixture } from "./fixtures";
@@ -133,6 +134,40 @@ test("creation can retry after publication fails without discarding its link", a
 });
 
 for (const invitation of [true, false]) {
+  test(`registration (${invitation ? "join" : "create"}) retries only service startup from its failure notice`, async () => {
+    let current!: Status;
+    const { calls, status } = await fixture(
+      {
+        connect: () => {
+          current.local.joined = true;
+          current.local.daemon_running = false;
+          current.local.daemon_connected = false;
+          current.error = {
+            code: "SERVICE_START_FAILED",
+            message: "system approval required",
+          };
+          throw current.error;
+        },
+        start: () => {
+          current.local.daemon_running = true;
+          current.error = null;
+        },
+      },
+      false,
+    );
+    current = status;
+    fillLink(invitation ? "xrun://saved-secret" : "xrun-relay://saved-secret");
+    await submit();
+    const notice = await screen.findByRole("alert");
+    await act(async () =>
+      fireEvent.click(within(notice).getByRole("button", { name: "重试" })),
+    );
+    expect(calls.filter((call) => call.command === "connect")).toHaveLength(1);
+    expect(calls.filter((call) => call.command === "start")).toHaveLength(1);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(document.body.textContent).not.toContain("saved-secret");
+  });
+
   test(`registration (${invitation ? "join" : "create"}) retries only service startup after saving identity`, async () => {
     let current!: Status;
     const { calls, status } = await fixture(

@@ -95,6 +95,11 @@ pub fn cloudflare_remembered_login() -> Result<bool> {
 pub async fn end_cloudflare_authorization() -> Result<()> {
     crate::cloudflare::auth::finish_temporary(Ok(())).await
 }
+/// Show the browser page that follows Cloudflare authorization in the App's language;
+/// `None` keeps the browser's language, as for the CLI.
+pub fn set_authorization_page_language(chinese: Option<bool>) {
+    crate::cloudflare::auth::set_callback_language(chinese)
+}
 /// Cancel only a pending OAuth flow; a started deployment keeps its durable recovery state.
 pub fn cancel_pending_cloudflare_authorization() -> bool {
     crate::cloudflare::auth::cancel_pending_login()

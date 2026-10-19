@@ -10,7 +10,7 @@ import { Select } from "./Select";
 
 export function LanguageSelect() {
   const { preference } = useLanguage();
-  const { busy, reportError, clearError } = useOperations();
+  const { busy, fail, clearError } = useOperations();
   const [saving, setSaving] = useState(false);
   return (
     <label className="setting-row" htmlFor="language">
@@ -30,7 +30,7 @@ export function LanguageSelect() {
           try {
             await changeLanguage(selected);
           } catch (error) {
-            reportError(error, "language.saveFailed");
+            fail("language.saveFailed", error);
           } finally {
             setSaving(false);
           }

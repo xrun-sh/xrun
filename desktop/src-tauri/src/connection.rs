@@ -4,6 +4,7 @@ use super::{
     app::{Desktop, record},
     bridge,
     error::{self, CommandError},
+    language::{Language, LanguageState},
     platform,
 };
 use serde_json::{Value, json};
@@ -73,6 +74,7 @@ pub(super) async fn connect<R: tauri::Runtime>(
 pub(super) async fn cloudflare_accounts<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, Desktop>,
+    language: State<'_, LanguageState>,
     reauthorize: bool,
     remember: Option<bool>,
     progress_id: Option<String>,
@@ -84,9 +86,15 @@ pub(super) async fn cloudflare_accounts<R: tauri::Runtime>(
         "remember": remember,
         "progress_id": progress_id,
         "finish_temporary": finish_temporary,
+        "chinese": chinese(&language),
     });
     let result = bridge::call_with_events("cloudflare_accounts", params, events(&app)).await;
     record(&app, result)
+}
+
+/// The page shown after browser authorization follows the App's language.
+fn chinese(language: &LanguageState) -> bool {
+    language.settings().language == Language::Zh
 }
 
 #[tauri::command]
@@ -128,6 +136,7 @@ pub(super) async fn open_cloudflare_authorization() -> Result<(), CommandError> 
 pub(super) async fn create_cloudflare_network<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     state: State<'_, Desktop>,
+    language: State<'_, LanguageState>,
     worker_name: String,
     account: String,
     device_name: String,
@@ -143,6 +152,7 @@ pub(super) async fn create_cloudflare_network<R: tauri::Runtime>(
         "region": region,
         "resume": resume,
         "progress_id": progress_id,
+        "chinese": chinese(&language),
     });
     // An OAuth cancellation returns null, which clears the previous error.
     let result = bridge::call_with_events("create_cloudflare_network", params, events(&app)).await;

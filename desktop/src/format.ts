@@ -94,9 +94,11 @@ export function commandText(params: { program: string; args: string[] }) {
     .join(" ");
 }
 
+export function byteSize(size: number) {
+  if (size < 1024) return `${size} B`;
+  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KiB`;
+  return `${(size / (1024 * 1024)).toFixed(1)} MiB`;
+}
 export function fileSize(size: number | null) {
-  if (size === null) return "";
-  if (size < 1024) return ` · ${size} B`;
-  if (size < 1024 * 1024) return ` · ${(size / 1024).toFixed(1)} KiB`;
-  return ` · ${(size / (1024 * 1024)).toFixed(1)} MiB`;
+  return size === null ? "" : ` · ${byteSize(size)}`;
 }

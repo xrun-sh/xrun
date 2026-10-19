@@ -3,7 +3,7 @@ import type { Device, Status } from "../api";
 import { useTraffic } from "../app/useTraffic";
 import { t } from "../i18n";
 import { Icon } from "./Icon";
-import { ErrorNotice } from "./ErrorNotice";
+import { ErrorNotice, StaleNotice } from "./ErrorNotice";
 import { TrafficDetails, trafficSize } from "./TrafficDetails";
 
 export function TrafficSummary({
@@ -65,16 +65,20 @@ export function TrafficSummary({
       {traffic.report && !traffic.report.complete && (
         <p className="footnote">{t("traffic.incomplete")}</p>
       )}
-      {traffic.error && (
-        <ErrorNotice
-          title={t("traffic.unavailable")}
-          detail={traffic.error}
-          retry={() => void traffic.refresh()}
-        />
-      )}
-      {traffic.error && traffic.report && (
-        <p className="footnote">{t("traffic.stale")}</p>
-      )}
+      {traffic.error &&
+        (traffic.report ? (
+          <StaleNotice
+            text={t("traffic.stale")}
+            detail={traffic.error}
+            retry={() => void traffic.refresh()}
+          />
+        ) : (
+          <ErrorNotice
+            title={t("traffic.unavailable")}
+            detail={traffic.error}
+            retry={() => void traffic.refresh()}
+          />
+        ))}
       <dialog
         ref={dialog}
         className="traffic-dialog"

@@ -53,3 +53,10 @@ CREATE TABLE job_attachments(
 );
 CREATE INDEX job_attachments_job ON job_attachments(job_id,created_at_ms,attachment_id);
 CREATE INDEX job_attachments_cleanup ON job_attachments(status,created_at_ms);
+CREATE TABLE job_scripts(
+    job_id TEXT PRIMARY KEY NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+    body TEXT,
+    truncated INTEGER NOT NULL CHECK(truncated IN (0,1)),
+    created_at_ms INTEGER NOT NULL
+);
+CREATE INDEX job_scripts_cleanup ON job_scripts(created_at_ms) WHERE body IS NOT NULL;

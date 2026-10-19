@@ -59,6 +59,10 @@ test("an exhausted code explains regeneration and keeps the name and address edi
   expect((screen.getByLabelText("中转地址") as HTMLInputElement).value).toBe(
     "relay.example",
   );
+  const code = screen.getByLabelText("接入码");
+  expect(code.getAttribute("aria-invalid")).toBe("true");
+  fireEvent.change(code, { target: { value: "K7M4-P9Q3" } });
+  expect(code.getAttribute("aria-invalid")).toBeNull();
 });
 test("manager codes copy only on demand and replacing a code revokes its previous identity", async () => {
   let sequence = 0;

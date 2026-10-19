@@ -111,6 +111,13 @@ impl JobStore {
         let job = job.clone();
         self.worker.call(move |db| db.insert(&job))
     }
+    /// Admit a script job together with its bounded body.
+    pub(crate) fn insert_with_script(&self, job: &Job, script: &str) -> Result<()> {
+        let job = job.clone();
+        let script = script.to_owned();
+        self.worker
+            .call(move |db| db.insert_with_script(&job, &script))
+    }
     pub(crate) async fn page_bounded_async(
         &self,
         source: &str,

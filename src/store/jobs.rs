@@ -9,6 +9,8 @@ pub(crate) const JOB_COLUMNS: &str = concat!(
 );
 pub(crate) const JOB_SCHEMA_VERSION: i64 = 1;
 const JOB_SCHEMA: &str = include_str!("schema.sql");
+/// Retained script bodies stop at this many bytes, on a character boundary.
+pub(crate) const SCRIPT_LIMIT: usize = 64 * 1024;
 
 pub(super) struct Database {
     pub(super) db: Connection,
@@ -107,6 +109,20 @@ pub(super) fn write_job(db: &Connection, job: &Job) -> Result<()> {
             job.output_loss_reason
         ],
     )?;
+    Ok(())
+}
+fn insert_job(db: &Connection, job: &Job) -> Result<()> {
+    validate_job_size(job)?;
+    db.execute("INSERT INTO jobs(job_id,source_device_id,target_device_id,request_id,request_hash,kind,params_json,result_json,state,
+        error_code,error_message,created_at_ms,started_at_ms,finished_at_ms,updated_at_ms,process_json,
+        leftover_possible,last_log_seq,log_bytes,output_complete,output_loss_reason)
+        VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+        params![
+            job.job_id,job.source_device_id,job.target_device_id,job.request_id,job.request_hash,
+            job.kind().as_str(),saved_params(&job.details)?,
+            job.result.as_ref().map(serde_json::to_string).transpose()?,state_name(&job.state)?,job.error_code,job.error_message,
+            job.created_at_ms,job.started_at_ms,job.finished_at_ms,job.updated_at_ms,job.process.as_ref().map(serde_json::to_string).transpose()?,
+            job.leftover_possible,i64::try_from(job.last_log_seq)?,i64::try_from(job.log_bytes)?,job.output_complete,job.output_loss_reason])?;
     Ok(())
 }
 const MAX_DIAGNOSTIC_BYTES: usize = 1024;
@@ -332,17 +348,30 @@ impl Database {
         Ok((jobs, None))
     }
     pub(super) fn insert(&self, job: &Job) -> Result<()> {
-        validate_job_size(job)?;
-        self.db.execute("INSERT INTO jobs(job_id,source_device_id,target_device_id,request_id,request_hash,kind,params_json,result_json,state,
-            error_code,error_message,created_at_ms,started_at_ms,finished_at_ms,updated_at_ms,process_json,
-            leftover_possible,last_log_seq,log_bytes,output_complete,output_loss_reason)
-            VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21)",
+        insert_job(&self.db, job)?;
+        self.changes.send_replace(());
+        Ok(())
+    }
+    /// A script keeps its bounded body beside the job, admitted in the same transaction.
+    pub(super) fn insert_with_script(&mut self, job: &Job, script: &str) -> Result<()> {
+        let mut end = script.len().min(SCRIPT_LIMIT);
+        while !script.is_char_boundary(end) {
+            end -= 1;
+        }
+        let transaction = self
+            .db
+            .transaction_with_behavior(TransactionBehavior::Immediate)?;
+        insert_job(&transaction, job)?;
+        transaction.execute(
+            "INSERT INTO job_scripts(job_id,body,truncated,created_at_ms) VALUES(?1,?2,?3,?4)",
             params![
-                job.job_id,job.source_device_id,job.target_device_id,job.request_id,job.request_hash,
-                job.kind().as_str(),saved_params(&job.details)?,
-                job.result.as_ref().map(serde_json::to_string).transpose()?,state_name(&job.state)?,job.error_code,job.error_message,
-                job.created_at_ms,job.started_at_ms,job.finished_at_ms,job.updated_at_ms,job.process.as_ref().map(serde_json::to_string).transpose()?,
-                job.leftover_possible,i64::try_from(job.last_log_seq)?,i64::try_from(job.log_bytes)?,job.output_complete,job.output_loss_reason])?;
+                job.job_id,
+                &script[..end],
+                end < script.len(),
+                job.created_at_ms
+            ],
+        )?;
+        transaction.commit()?;
         self.changes.send_replace(());
         Ok(())
     }
@@ -650,6 +679,46 @@ mod tests {
             )?))?,
             100002
         );
+        Ok(())
+    }
+    #[test]
+    fn scripts_keep_a_bounded_body_admitted_with_their_job() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let store = JobStore::open(&dir.path().join("tasks.db"), true)?;
+        let mut short = job(&store);
+        short.job_id = "SCRIPT".into();
+        short.request_id = "script".into();
+        store.insert_with_script(&short, "echo hi\n")?;
+        // A three-byte character straddles the limit, so the body stops before it.
+        let long = format!("{}界{}", "a".repeat(SCRIPT_LIMIT - 1), "b".repeat(10));
+        store.insert_with_script(&job(&store), &long)?;
+        let scripts = || {
+            store.worker.call(|db| {
+                Ok(db
+                    .db
+                    .prepare("SELECT job_id,body,truncated FROM job_scripts ORDER BY job_id")?
+                    .query_map([], |row| {
+                        Ok((
+                            row.get::<_, String>(0)?,
+                            row.get::<_, String>(1)?,
+                            row.get::<_, bool>(2)?,
+                        ))
+                    })?
+                    .collect::<rusqlite::Result<Vec<_>>>()?)
+            })
+        };
+        let rows = scripts()?;
+        assert_eq!(rows[0], ("SCRIPT".into(), "echo hi\n".into(), false));
+        assert_eq!(rows[1].0, "TEST01");
+        assert_eq!(rows[1].1, "a".repeat(SCRIPT_LIMIT - 1));
+        assert!(rows[1].2);
+        // A rejected admission keeps neither the job nor its script.
+        assert!(
+            store
+                .insert_with_script(&job(&store), "echo again")
+                .is_err()
+        );
+        assert_eq!(scripts()?.len(), 2);
         Ok(())
     }
     #[test]

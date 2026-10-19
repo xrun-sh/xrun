@@ -181,16 +181,24 @@
   height: 100%;
   object-fit: cover;
 }
-.activity-pagination {
+#activity-records.is-stale {
+  opacity: 0.55;
+  transition: opacity 0.15s;
+}
+.activity-more {
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  margin-top: 10px;
+  gap: 8px;
+  min-height: 1px;
   font-size: 12px;
+  color: var(--muted);
 }
-.activity-pagination button {
-  font-size: 12.5px;
+.activity-more:not(:empty) {
+  padding: 12px 14px;
+}
+.activity-more button {
+  font-size: 12px;
 }
 .activity-detail {
   position: relative;
@@ -236,14 +244,25 @@
 .activity-detail-title h2.mono {
   font-size: 13px;
 }
-.activity-detail-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 12px;
+.activity-facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px 16px;
+  margin: 12px 0;
+  font-size: 12.5px;
+}
+.activity-facts dt {
   color: var(--muted);
-  font-size: 12px;
-  margin: 10px 0;
+}
+.activity-facts dd {
+  margin: 0;
   overflow-wrap: anywhere;
+}
+.activity-facts code {
+  font-size: 12px;
+}
+.activity-facts .identifier {
+  margin: -4px 0 -4px -5px;
 }
 .activity-description {
   display: block;
@@ -264,10 +283,8 @@
   font-size: 12px;
   overflow-wrap: anywhere;
 }
-.activity-detail-facts .panel-row,
-.activity-detail .panel-row {
-  font-size: 12px;
-  padding: 8px 0;
+.activity-detail-facts .activity-facts {
+  margin: 10px 0 0;
 }
 #command-warning {
   border-radius: var(--radius-sm);
@@ -337,6 +354,49 @@
 }
 .output-footer .text-button {
   font-size: 12px;
+}
+.script-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0 10px;
+}
+.script-toolbar strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.script-meta {
+  margin-right: auto;
+  color: var(--muted);
+  font: 11.5px var(--font-mono);
+}
+.script-toolbar .text-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+}
+.script-body {
+  margin: 0;
+  padding: 10px 12px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--log-bg);
+  color: var(--log-text);
+  font: 11.5px/1.7 var(--font-mono);
+  tab-size: 4;
+}
+.script-note {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+.script-toolbar + .script-note {
+  margin-top: 0;
 }
 .attachment-panel {
   margin-top: 12px;

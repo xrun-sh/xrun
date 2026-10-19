@@ -157,8 +157,8 @@ test("English UI localizes all pages, dynamic labels, confirmations and operatio
   await screen.findByText("Task finished");
   expect(screen.getByText("Exit code 1")).toBeTruthy();
   expect(
-    screen.getByText("Duration: 1 min 5 s", {
-      selector: ".activity-detail-meta span",
+    screen.getByText("1 min 5 s", {
+      selector: ".activity-facts dd",
     }),
   ).toBeTruthy();
   await page("Settings");

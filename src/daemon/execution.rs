@@ -98,11 +98,11 @@ pub(super) fn submit(
             bail!(ErrorCode::InvalidRequest.error("duplicate Windows environment key"));
         }
     }
-    if let Some(shell) = &request.shell {
+    let script = if let Some(shell) = &request.shell {
         if !["sh", "bash", "zsh", "powershell", "pwsh", "cmd"].contains(&shell.as_str()) {
             bail!(ErrorCode::ShellUnsupported.error(shell.to_string()))
         }
-        std::str::from_utf8(&input)
+        let script = std::str::from_utf8(&input)
             .context(ErrorCode::InvalidScript.error("script must be UTF-8"))?;
         if shell == "cmd" && !input.is_ascii() {
             bail!(ErrorCode::InvalidScript.error("cmd requires ASCII"))
@@ -118,7 +118,10 @@ pub(super) fn submit(
                     .error("cmd arguments cannot contain quotes or newlines")
             )
         }
-    }
+        Some(script)
+    } else {
+        None
+    };
     let hash = request.hash();
     if let Some(job) = rt.store.by_request(source, &request.request_id)? {
         if job.request_hash != hash {
@@ -156,7 +159,11 @@ pub(super) fn submit(
     job.job_id = id;
     validate_job_size(&job)?;
     tracing::debug!(request_id = %request.request_id, "persisting reliable execution admission");
-    rt.store.insert(&job)?;
+    // A script keeps a bounded copy of its body; other input keeps only its digest.
+    match script {
+        Some(script) => rt.store.insert_with_script(&job, script)?,
+        None => rt.store.insert(&job)?,
+    }
     let background = rt.clone();
     let saved = job.clone();
     let mut jobs = rt.jobs.lock().unwrap();

@@ -61,14 +61,14 @@ function AuthorityDialog({
   status: Status | null;
   close: () => void;
 }) {
-  const { busy, operate, notify } = useOperations();
+  const { busy, operate, notify, fail } = useOperations();
   const dialog = useRef<HTMLDialogElement>(null);
   const [path, setPath] = useState("");
   const [password, setPassword] = useState("");
   const [confirmation, setConfirmation] = useState("");
   const [recipient, setRecipient] = useState("");
   const [devices, setDevices] = useState<Device[]>([]);
-  const [failure, setFailure] = useState<string | null>(null);
+  const [loadFailure, setLoadFailure] = useState<string | null>(null);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
@@ -88,7 +88,7 @@ function AuthorityDialog({
           );
       })
       .catch((error) => {
-        if (active) setFailure(errorText(error));
+        if (active) setLoadFailure(errorText(error));
       });
     return () => {
       active = false;
@@ -116,30 +116,23 @@ function AuthorityDialog({
           <Icon name="close" />
         </button>
       </div>
-      {failure && (
-        <ErrorNotice title={t("authority.failed")} detail={failure} />
+      {loadFailure && (
+        <ErrorNotice title={t("devices.listFailed")} detail={loadFailure} />
       )}
       <form
         onSubmit={async (event) => {
           event.preventDefault();
           if (!path || !password || (exporting && password !== confirmation))
             return;
-          setFailure(null);
           const result = await operate(
-            async () => {
-              try {
-                return exporting
-                  ? await api.exportAuthority(
-                      path,
-                      password,
-                      mode === "migrate" ? recipient : null,
-                    )
-                  : await api.restoreAuthority(path, password);
-              } catch (error) {
-                setFailure(errorText(error));
-                throw error;
-              }
-            },
+            () =>
+              exporting
+                ? api.exportAuthority(
+                    path,
+                    password,
+                    mode === "migrate" ? recipient : null,
+                  )
+                : api.restoreAuthority(path, password),
             {
               name: exporting ? "export_authority" : "restore_authority",
               title: "authority.failed",
@@ -188,7 +181,7 @@ function AuthorityDialog({
                 const selected = await api.chooseAuthorityArchive(exporting);
                 if (selected) setPath(selected);
               } catch (error) {
-                setFailure(errorText(error));
+                fail("authority.failed", error);
               }
             }}
           >

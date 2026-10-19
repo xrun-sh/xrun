@@ -199,17 +199,29 @@ async fn activity_job<R: tauri::Runtime>(
     read("activity_job", json!({"db_id": db_id, "id": id})).await
 }
 #[tauri::command]
+async fn activity_script<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    db_id: String,
+    id: String,
+) -> Result<Value, CommandError> {
+    ensure_current_service(&app)
+        .await
+        .map_err(CommandError::from_error)?;
+    read("activity_script", json!({"db_id": db_id, "id": id})).await
+}
+#[tauri::command]
 async fn activity_history<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     before: Option<String>,
     filter: String,
+    search: Option<Value>,
 ) -> Result<Value, CommandError> {
     ensure_current_service(&app)
         .await
         .map_err(CommandError::from_error)?;
     read(
         "activity_history",
-        json!({"before": before, "filter": filter}),
+        json!({"before": before, "filter": filter, "search": search}),
     )
     .await
 }
@@ -479,6 +491,7 @@ pub(super) fn register<R: tauri::Runtime>(builder: tauri::Builder<R>) -> tauri::
             job_output,
             activity_history,
             activity_job,
+            activity_script,
             activity_attachment,
             save_activity_attachment,
             save_attachment_retention,
@@ -1317,6 +1330,24 @@ pub(crate) mod tests {
                     .unwrap_err()["code"],
                     "DB_RESET"
                 );
+                assert_eq!(
+                    invoke(
+                        &window,
+                        "activity_script",
+                        json!({"dbId":tasks.db_id,"id":detail["job_id"]})
+                    )
+                    .unwrap_err()["code"],
+                    "JOB_NOT_FOUND"
+                );
+                assert_eq!(
+                    invoke(
+                        &window,
+                        "activity_script",
+                        json!({"dbId":"previous","id":detail["job_id"]})
+                    )
+                    .unwrap_err()["code"],
+                    "DB_RESET"
+                );
                 let older = invoke(
                     &window,
                     "activity_history",
@@ -1342,6 +1373,14 @@ pub(crate) mod tests {
                     invoke(&window, "activity_history", json!({"filter":"invalid"})).unwrap_err()["code"]
                         == "INVALID_FILTER"
                 );
+                let found = invoke(
+                    &window,
+                    "activity_history",
+                    json!({"filter":"all","search":[{"text":"FILE-55"},{"text":"x","kinds":["pull"]}]}),
+                )
+                .unwrap();
+                assert_eq!(found["entries"].as_array().unwrap().len(), 1);
+                assert_eq!(found["entries"][0]["params"]["path"], "file-55");
                 for _ in 0..40 {
                     tasks.append("000001", "stdout", b"output\n")?;
                 }

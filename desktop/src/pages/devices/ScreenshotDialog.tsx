@@ -7,9 +7,7 @@ import {
   type ScreenshotOptions,
 } from "../../api";
 import { useOperations } from "../../app/useOperations";
-import { ErrorNotice } from "../../components/ErrorNotice";
 import { Select } from "../../components/Select";
-import { errorText } from "../../errors";
 import { t } from "../../i18n";
 import { Icon } from "../../components/Icon";
 
@@ -22,13 +20,12 @@ export function ScreenshotDialog({
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef(false);
-  const { busy: otherBusy } = useOperations();
+  const { busy: otherBusy, fail, clearError } = useOperations();
   const [preset, setPreset] = useState("original");
   const [format, setFormat] = useState<ScreenshotFormat>("webp");
   const [width, setWidth] = useState("1600");
   const [quality, setQuality] = useState("80");
   const [busy, setBusy] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
   const [result, setResult] = useState<ScreenshotDownload | null>(null);
   useEffect(() => {
     dialog.current?.showModal();
@@ -71,7 +68,7 @@ export function ScreenshotDialog({
           if (pending.current || otherBusy) return;
           pending.current = true;
           setBusy(true);
-          setFailure(null);
+          clearError();
           try {
             const path = await api.chooseScreenshotDestination(options.format);
             if (path)
@@ -79,7 +76,7 @@ export function ScreenshotDialog({
                 await api.remoteScreenshot(device.device_id, path, options),
               );
           } catch (error) {
-            setFailure(errorText(error));
+            fail("capture.failed", error);
           } finally {
             pending.current = false;
             setBusy(false);
@@ -147,13 +144,6 @@ export function ScreenshotDialog({
           {t(busy ? "capture.capturing" : "capture.save")}
         </button>
       </form>
-      {failure && (
-        <ErrorNotice
-          title={t("capture.failed")}
-          detail={failure}
-          dismiss={() => setFailure(null)}
-        />
-      )}
       {result && (
         <section className="capture-result">
           <p>{t("capture.saved")}</p>

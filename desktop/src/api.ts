@@ -270,6 +270,25 @@ export interface AttachmentPreview {
 }
 
 export type ActivityFilter = "all" | "running" | "failed";
+/** One search word plus the devices and operations whose displayed names contain it. */
+export interface SearchTerm {
+  text: string;
+  devices: string[];
+  kinds: Job["kind"][];
+}
+export interface ActivityPage {
+  db_id: string | null;
+  entries: Job[];
+  /** Titles of listed scripts whose bodies are still kept, by job ID. */
+  script_titles: Record<string, string>;
+  next_cursor: string | null;
+}
+/** The script a command ran, as kept on this device. */
+export interface ActivityScript {
+  /** Null once the body expired with attachments of the same age. */
+  text: string | null;
+  truncated: boolean;
+}
 export type ActionRequest =
   | { command: "start" | "stop" | "remove_service" | "hide_icon" }
   | { command: "join" | "create_network"; args: { link: string; name: string } }
@@ -306,6 +325,7 @@ export type PendingOperation =
   | "invite"
   | "copy_invitation"
   | "copy_identifier"
+  | "copy_script"
   | "revoke"
   | "cloudflare_accounts"
   | "logout_cloudflare"
@@ -401,7 +421,12 @@ export interface RemoteReceipt {
 }
 export type Operation = <T>(
   operation: () => Promise<T>,
-  context: { name: PendingOperation; title: PlainMessageKey },
+  context: {
+    name: PendingOperation;
+    title: PlainMessageKey;
+    /** Offered on the failure notice; omit it when retrying needs new input. */
+    retry?: () => void;
+  },
 ) => Promise<T | undefined>;
 
 export interface Invitation {
@@ -572,6 +597,8 @@ export const api = {
   revoke: (device: string) => invoke<Revocation>("revoke", { device }),
   copyInvitation: (link: string) => invoke<void>("copy_invitation", { link }),
   copyIdentifier: (value: string) => invoke<void>("copy_identifier", { value }),
+  /** The identifier command copies plain text unchanged, so error details reuse it. */
+  copyText: (value: string) => invoke<void>("copy_identifier", { value }),
   devices: () =>
     invoke<{
       devices: Device[] | null;
@@ -581,13 +608,14 @@ export const api = {
     withDialog(() => invoke<string | null>("choose_directory")),
   action: (request: ActionRequest) =>
     invoke<void>(request.command, "args" in request ? request.args : {}),
-  activity: (before: string | null, filter: ActivityFilter) =>
-    invoke<{
-      db_id: string | null;
-      entries: Job[];
-      next_cursor: string | null;
-    }>("activity_history", { before, filter }),
+  activity: (
+    before: string | null,
+    filter: ActivityFilter,
+    search: SearchTerm[],
+  ) => invoke<ActivityPage>("activity_history", { before, filter, search }),
   job: (dbId: string, id: string) => invoke<Job>("activity_job", { dbId, id }),
+  script: (dbId: string, id: string) =>
+    invoke<ActivityScript>("activity_script", { dbId, id }),
   attachment: (id: string) =>
     invoke<AttachmentPreview>("activity_attachment", { id }),
   saveAttachment: (id: string) =>

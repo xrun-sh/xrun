@@ -20,7 +20,7 @@ test("compact device IDs distinguish matching prefixes while copying and grantin
     admin: false,
     os: "windows",
     arch: "aarch64",
-    daemon_version: "0.1.0-rc.13",
+    daemon_version: "0.1.0-rc.14",
   }));
   const { calls } = await fixture({
     devices: () => ({ devices: members, server_error: null }),
@@ -45,7 +45,7 @@ test("compact device IDs distinguish matching prefixes while copying and grantin
   expect(within(list).getByText("build-2")).toBeTruthy();
   openMemberActions("build-2");
   expect(
-    screen.getByText("0.1.0-rc.13", { selector: ".device-facts dd" }),
+    screen.getByText("0.1.0-rc.14", { selector: ".device-facts dd" }),
   ).toBeTruthy();
   expect(calls.some((call) => call.command === "copy_identifier")).toBe(false);
   fireEvent.click(screen.getByRole("button", { name: "复制设备 ID" }));
@@ -77,7 +77,7 @@ test("cached device information is shown when the relay query fails after reopen
           admin: false,
           os: "windows",
           arch: "x86_64",
-          daemon_version: "0.1.0-rc.13",
+          daemon_version: "0.1.0-rc.14",
           last_seen: 1000,
         },
       ],
@@ -92,7 +92,10 @@ test("cached device information is shown when the relay query fails after reopen
     "Windows · x64",
   );
   expect(within(row as HTMLElement).getByText("离线")).toBeTruthy();
-  await screen.findByText("CONNECTION_CLOSED: relay unavailable");
+  const stale = await screen.findByText(
+    "设备列表未能刷新，已保留上次读取的结果。",
+  );
+  expect(stale.title).toBe("CONNECTION_CLOSED: relay unavailable");
   openMemberActions("windows-pc");
   expect(screen.getByText("最近在线")).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "复制设备 ID" }));
@@ -153,7 +156,7 @@ test("unknown activity sources show a compact ID and remain searchable by the co
   });
   await page("活动");
   expect((await findActivity("ABC123")).textContent).toContain("9db79d9b…79e1");
-  fireEvent.change(screen.getByRole("textbox", { name: "搜索本页活动" }), {
+  fireEvent.change(screen.getByRole("textbox", { name: "搜索活动" }), {
     target: { value: firstId },
   });
   fireEvent.click(await findActivity("ABC123"));

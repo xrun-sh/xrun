@@ -10,6 +10,7 @@ import {
 import { mockIPC } from "@tauri-apps/api/mocks";
 import { StrictMode } from "react";
 import { App } from "../src/App";
+import { intersect } from "./setup";
 import type {
   Job,
   CommandJob,
@@ -51,7 +52,7 @@ export async function fixture(
       joined,
       device_id: "self",
       name: "mac1",
-      version: "0.1.0-rc.13",
+      version: "0.1.0-rc.14",
       daemon_running: true,
       daemon_connected: true,
       remote_access_paused: false,
@@ -475,3 +476,15 @@ export async function findActivity(jobId: string) {
     return row!;
   });
 }
+
+/** Scroll the activity list to its end, where older activity loads. */
+export async function revealOlderActivity() {
+  const end = document.querySelector(".activity-more");
+  if (!end) throw new Error("Missing activity list end");
+  await act(async () => intersect(end, true));
+}
+
+export const historyArgs = (calls: { command: string; args: Args }[]) =>
+  calls
+    .filter((call) => call.command === "activity_history")
+    .map((call) => call.args);

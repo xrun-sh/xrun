@@ -1,11 +1,5 @@
 import { useKeepWindow, useOperations } from "../app/useOperations";
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   api,
   type ExecutionSettings,
@@ -24,22 +18,11 @@ import { t } from "../i18n";
 
 interface Props {
   status: Status | null;
-  feedback: ReactNode;
   networkSettingsRequest: number;
 }
 
-export function SettingsPage({
-  status,
-  feedback,
-  networkSettingsRequest,
-}: Props) {
-  const {
-    busy,
-    pending,
-    action,
-    notify,
-    reportError: onError,
-  } = useOperations();
+export function SettingsPage({ status, networkSettingsRequest }: Props) {
+  const { busy, pending, action, notify, fail } = useOperations();
   const [interfaces, setInterfaces] = useState<PrivateInterface[]>([]);
   const [settings, setSettings] = useState<Settings | null>(null);
   const [cwd, setCwd] = useState("");
@@ -103,7 +86,6 @@ export function SettingsPage({
           <p>{t("settings.description")}</p>
         </div>
       </div>
-      {feedback}
       {loadError && (
         <ErrorNotice
           title={t("settings.loadFailed")}
@@ -338,7 +320,7 @@ export function SettingsPage({
                   const selected = await api.chooseDirectory();
                   if (selected) setCwd(selected);
                 } catch (e) {
-                  onError(e, "settings.chooseFailed");
+                  fail("settings.chooseFailed", e);
                 }
               }}
             >

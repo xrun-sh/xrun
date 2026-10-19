@@ -6,6 +6,7 @@ import { ActivityState } from "./ActivityState";
 import { ScreenshotThumbnail } from "./ScreenshotThumbnail";
 import {
   operationLabel,
+  isScript,
   jobDescription,
   jobDuration,
   jobSize,
@@ -13,14 +14,16 @@ import {
 
 interface Props {
   job: Job;
+  /** First meaningful line of a script whose body is still kept. */
+  scriptTitle?: string;
   sourceName: string;
   active: boolean;
   selected: boolean;
   onSelect: (button: HTMLButtonElement) => void;
 }
 /** The subject leads each row; the operation, source and size follow. */
-function rowTitle(job: Job) {
-  const description = jobDescription(job);
+function rowTitle(job: Job, scriptTitle?: string) {
+  const description = jobDescription(job, scriptTitle);
   if (job.kind === "push" || job.kind === "pull")
     return description.split(/[\\/]/).filter(Boolean).pop() || description;
   if (job.kind === "screenshot")
@@ -34,6 +37,7 @@ function rowTitle(job: Job) {
 }
 export function ActivityRow({
   job,
+  scriptTitle,
   sourceName,
   active,
   selected,
@@ -41,8 +45,12 @@ export function ActivityRow({
 }: Props) {
   const elapsed = jobDuration(job);
   const attachment = job.attachments[0];
-  const description = jobDescription(job);
+  const description = jobDescription(job, scriptTitle);
   const command = job.kind === "exec" || job.kind === "stream_exec";
+  // A script without its body is named in words rather than code.
+  const code =
+    (command && (scriptTitle !== undefined || !isScript(job))) ||
+    job.kind === "forward";
   const kindIcon = command
     ? "terminal"
     : job.kind === "screenshot"
@@ -64,10 +72,10 @@ export function ActivityRow({
       </span>
       <span className="activity-row-content">
         <span
-          className={`activity-row-title ${command || job.kind === "forward" ? "mono" : ""}`}
+          className={`activity-row-title ${code ? "mono" : ""}`}
           title={description || undefined}
         >
-          {rowTitle(job)}
+          {rowTitle(job, scriptTitle)}
         </span>
         <span className="activity-row-meta">
           <span className="activity-kind">{operationLabel(job.kind)}</span>

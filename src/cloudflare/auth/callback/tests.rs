@@ -29,8 +29,9 @@ async fn received_callback_is_localized_and_never_claims_deployment_success() ->
     assert_eq!(response.headers()[header::CACHE_CONTROL], "no-store");
     assert_eq!(receiver.await??, "owned-code");
     let body = String::from_utf8(to_bytes(response.into_body(), 16384).await?.to_vec())?;
-    assert!(body.contains("授权已返回"));
-    assert!(body.contains("可以关闭此页"));
+    assert!(body.contains("授权成功"));
+    assert!(body.contains("可以关闭此页面"));
+    assert!(body.contains(r#"data-state="received""#));
     assert!(!body.contains("网络已创建"));
     assert!(!body.contains("owned-code"));
     assert!(!body.contains("owned-state"));
@@ -42,12 +43,16 @@ async fn received_callback_is_localized_and_never_claims_deployment_success() ->
             ("declined-zh", PageState::Declined, true),
             ("declined-en", PageState::Declined, false),
             ("invalid-zh", PageState::Invalid, true),
+            ("invalid-en", PageState::Invalid, false),
             ("finished-zh", PageState::Finished, true),
+            ("finished-en", PageState::Finished, false),
         ] {
-            let detail = if matches!(state, PageState::Declined) {
-                Some("OAUTH_INVALID_SCOPE: Cloudflare permissions need updating.")
-            } else {
-                None
+            let detail = match state {
+                PageState::Declined => {
+                    Some("OAUTH_INVALID_SCOPE: Cloudflare permissions need updating.")
+                }
+                PageState::Invalid => Some("Invalid login state."),
+                _ => None,
             };
             std::fs::write(
                 directory.join(format!("{name}.html")),
@@ -247,4 +252,30 @@ fn provider_details_are_bounded_and_malformed_error_names_are_not_echoed() {
         assert!(error.message.contains("invalid_error_response"));
         assert!(!error.message.contains("was declined"));
     }
+}
+
+#[tokio::test]
+async fn desktop_language_replaces_the_browser_language() -> Result<()> {
+    set_language(Some(true));
+    let (sender, _receiver) = oneshot::channel();
+    let response = Router::new()
+        .route("/oauth/callback", get(receive))
+        .with_state(Arc::new(Callback {
+            state: "owned-state".into(),
+            sender: Mutex::new(Some(sender)),
+        }))
+        .oneshot(
+            Request::builder()
+                .uri("/oauth/callback?state=owned-state&error=access_denied")
+                .header("accept-language", "en-US,en;q=0.9")
+                .body(Body::empty())?,
+        )
+        .await;
+    set_language(None);
+    let body = String::from_utf8(to_bytes(response?.into_body(), 16384).await?.to_vec())?;
+    assert!(body.contains(r#"<html lang="zh-CN">"#));
+    assert!(body.contains("授权未完成"));
+    assert!(body.contains(r#"data-state="declined""#));
+    assert!(body.contains("错误信息"));
+    Ok(())
 }

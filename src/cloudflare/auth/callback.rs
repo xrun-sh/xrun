@@ -9,9 +9,27 @@ use axum::{
 use page::{PageState, page};
 use std::{
     collections::HashMap,
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU8, Ordering},
+    },
 };
 use tokio::sync::oneshot;
+
+const BROWSER_LANGUAGE: u8 = 0;
+const ENGLISH: u8 = 1;
+const CHINESE: u8 = 2;
+/// A desktop's interface language; until one is set, the browser's language applies.
+static LANGUAGE: AtomicU8 = AtomicU8::new(BROWSER_LANGUAGE);
+
+pub(super) fn set_language(chinese: Option<bool>) {
+    let language = match chinese {
+        None => BROWSER_LANGUAGE,
+        Some(false) => ENGLISH,
+        Some(true) => CHINESE,
+    };
+    LANGUAGE.store(language, Ordering::Relaxed);
+}
 
 pub(super) async fn listen(redirects: &[&str]) -> anyhow::Result<tokio::net::TcpListener> {
     for redirect in redirects {
@@ -60,10 +78,14 @@ pub(super) async fn receive(
     Query(query): Query<HashMap<String, String>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
-    let chinese = headers
-        .get(header::ACCEPT_LANGUAGE)
-        .and_then(|value| value.to_str().ok())
-        .is_some_and(|value| value.trim().to_ascii_lowercase().starts_with("zh"));
+    let chinese = match LANGUAGE.load(Ordering::Relaxed) {
+        ENGLISH => false,
+        CHINESE => true,
+        _ => headers
+            .get(header::ACCEPT_LANGUAGE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.trim().to_ascii_lowercase().starts_with("zh")),
+    };
     if query.get("state") != Some(&callback.state) {
         return response(
             StatusCode::BAD_REQUEST,

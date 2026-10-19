@@ -10,6 +10,7 @@ export function useDeploymentProgress() {
     setEvents([]);
     setSeconds(0);
   }, []);
+  const clear = useCallback(() => setEvents([]), []);
   const receive = useCallback((event: DeploymentProgress) => {
     setEvents((previous) => [...previous, event].slice(-80));
   }, []);
@@ -39,11 +40,13 @@ export function useDeploymentProgress() {
     active.at(-1);
   useEffect(() => {
     if (!current) return;
-    const timer = setInterval(
-      () => setSeconds(Math.floor((Date.now() - started.current) / 1000)),
-      1000,
-    );
-    return () => clearInterval(timer);
+    const tick = () =>
+      setSeconds(Math.floor((Date.now() - started.current) / 1000));
+    const timer = setInterval(tick, 1000);
+    return () => {
+      clearInterval(timer);
+      tick();
+    };
   }, [current]);
-  return { start, receive, current, events, seconds };
+  return { start, clear, receive, current, events, seconds };
 }

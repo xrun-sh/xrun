@@ -4,13 +4,29 @@ import { localState } from "../format";
 import { t } from "../i18n";
 import { Icon } from "./Icon";
 
+/** A compact pointer to a local status problem; its details open in the shared notice. */
+export function StatusProblem({ show }: { show: () => void }) {
+  return (
+    <button
+      className="local-device-problem"
+      title={t("local.problem")}
+      onClick={show}
+    >
+      <Icon name="alert" />
+      <span>{t("local.problem")}</span>
+    </button>
+  );
+}
+
 /** The sidebar footer identifies this device and keeps the pause control at hand. */
 export function LocalDeviceCard({
   status,
   openNetworkSettings,
+  showProblem,
 }: {
   status: Status;
   openNetworkSettings: () => void;
+  showProblem: (() => void) | null;
 }) {
   const { busy, action } = useOperations();
   const { local } = status;
@@ -54,6 +70,7 @@ export function LocalDeviceCard({
           </button>
         )}
       </div>
+      {showProblem && <StatusProblem show={showProblem} />}
     </div>
   );
 }

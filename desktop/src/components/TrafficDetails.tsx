@@ -2,7 +2,7 @@ import type { Device, Status, TrafficReport } from "../api";
 import { useTraffic } from "../app/useTraffic";
 import { dateTime } from "../format";
 import { t } from "../i18n";
-import { ErrorNotice } from "./ErrorNotice";
+import { ErrorNotice, StaleNotice } from "./ErrorNotice";
 import { Identifier } from "./Identifier";
 import { RefreshButton } from "./RefreshButton";
 
@@ -117,7 +117,7 @@ export function TrafficDetails({
           />
         </div>
       </div>
-      {error && (
+      {error && !report && (
         <ErrorNotice
           title={t("traffic.unavailable")}
           detail={error}
@@ -134,7 +134,13 @@ export function TrafficDetails({
           {!report.complete && (
             <p className="notice traffic-note">{t("traffic.incomplete")}</p>
           )}
-          {error && <p className="muted traffic-note">{t("traffic.stale")}</p>}
+          {error && (
+            <StaleNotice
+              text={t("traffic.stale")}
+              detail={error}
+              retry={() => void traffic.refresh()}
+            />
+          )}
           <div className="traffic-totals">
             <div>
               <span>{t(manager ? "traffic.ingress" : "traffic.sent")}</span>

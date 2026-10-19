@@ -1,4 +1,7 @@
 import { t } from "../i18n";
+import { Icon } from "./Icon";
+
+/** Content that failed to load reports it in place, with a retry. */
 export function ErrorNotice({
   title,
   detail,
@@ -30,5 +33,26 @@ export function ErrorNotice({
       </details>
       {retry && <button onClick={retry}>{t("common.retry")}</button>}
     </div>
+  );
+}
+
+/** A failed background refresh keeps the last data and only says it may be outdated. */
+export function StaleNotice({
+  text,
+  detail,
+  retry,
+}: {
+  text: string;
+  detail: string;
+  retry: () => void;
+}) {
+  return (
+    <p className="stale-notice" role="status">
+      <Icon name="alert" />
+      <span title={detail}>{text}</span>
+      <button className="text-button" onClick={retry}>
+        {t("common.retry")}
+      </button>
+    </p>
   );
 }
