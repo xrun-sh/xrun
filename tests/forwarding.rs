@@ -50,8 +50,10 @@ async fn forward(lab: &Lab, port: u16) -> Result<(Child, String)> {
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> Result<()> {
+    let stage = std::cell::Cell::new("network setup");
     tokio::time::timeout(Duration::from_secs(40), async {
         let mut lab = Lab::new().await?;
+        stage.set("invalid port validation");
         for invalid in ["0", "65536", "abc", "1:0", "1:2:3"] {
             assert_eq!(
                 cli(&lab.source, &["target1", "forward", invalid])
@@ -61,6 +63,7 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
                 Some(2)
             );
         }
+        stage.set("HTTP half-close");
         let backend = TcpListener::bind("127.0.0.1:0").await?;
         let (mut forwarding, address) = forward(&lab, backend.local_addr()?.port()).await?;
         let mut browser = TcpStream::connect(&address).await?;
@@ -83,6 +86,7 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
 
         // Multiple connections, more than the bounded buffering, and a service
         // that waits for input EOF before producing a response.
+        stage.set("concurrent transfers");
         let content: Vec<u8> = (0..2_100_000).map(|i| (i % 256) as u8).collect();
         let remote = async {
             let mut workers = tokio::task::JoinSet::new();
@@ -137,8 +141,14 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
 
         // Both peers send beyond TCP buffer capacity while reading concurrently.
         // This catches a relay that blocks the reverse direction on a slow sink.
-        let client = TcpStream::connect(&address).await?;
+        stage.set("bidirectional transfer");
+        let socket = tokio::net::TcpSocket::new_v4()?;
+        socket.set_send_buffer_size(4096)?;
+        socket.set_recv_buffer_size(4096)?;
+        let client = socket.connect(address.parse()?).await?;
+        client.set_nodelay(true)?;
         let (service, _) = backend.accept().await?;
+        service.set_nodelay(true)?;
         let (mut client_read, mut client_write) = client.into_split();
         let (mut service_read, mut service_write) = service.into_split();
         let bulk = vec![0x5a; 5_000_000];
@@ -175,6 +185,7 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
         };
         tokio::try_join!(upload, download, receive_upload, receive_download)?;
 
+        stage.set("pause and resume");
         let mut active = TcpStream::connect(&address).await?;
         let (mut service, _) = backend.accept().await?;
         service.write_all(b"connected").await?;
@@ -190,9 +201,11 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
         let mut bytes = [0; 7];
         active.read_exact(&mut bytes).await?;
         assert_eq!(&bytes, b"resumed");
+        stage.set("revocation");
         ok(cli(&lab.source, &["revoke", "target1"]).await);
         let mut bytes = vec![];
         let _ = active.read_to_end(&mut bytes).await;
+        stage.set("shutdown");
         stop_forwarding(&mut forwarding).await?;
         stop_daemon(&lab.target, &mut lab.daemon).await?;
         stop_daemon(&lab.source, &mut lab.source_daemon).await?;
@@ -205,7 +218,8 @@ async fn loopback_forwarding_handles_http_half_close_concurrency_and_pause() -> 
         assert!(count >= 4);
         Ok::<_, anyhow::Error>(())
     })
-    .await??;
+    .await
+    .with_context(|| format!("forwarding timed out during {}", stage.get()))??;
     Ok(())
 }
 
