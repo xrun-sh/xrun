@@ -58,14 +58,18 @@ function Invoke-Process([string]$File, [string]$Arguments, [int]$Timeout = 12000
     $info.EnvironmentVariables.Remove('PSModulePath')
     $process = New-Object Diagnostics.Process
     $process.StartInfo = $info
+    $timer = [Diagnostics.Stopwatch]::StartNew()
+    Write-Host "Running (timeout $Timeout ms): $File $Arguments"
     try {
         [void]$process.Start()
         $stdout = $process.StandardOutput.ReadToEndAsync()
         $stderr = $process.StandardError.ReadToEndAsync()
         if (-not $process.WaitForExit($Timeout)) {
-            $process.Kill()
-            throw "Process hung, possibly on an unexpected dialog: $File"
+            $process.Kill($true)
+            [void]$process.WaitForExit(10000)
+            throw "Process timed out after $Timeout ms: $File $Arguments"
         }
+        Write-Host "Exited $($process.ExitCode) after $($timer.ElapsedMilliseconds) ms: $File"
         return [pscustomobject]@{
             ExitCode = $process.ExitCode
             Stdout = $stdout.GetAwaiter().GetResult().Trim()
@@ -212,7 +216,9 @@ try {
     $env:XRUN_TEST_BINARY = $cliBinary
     & cargo @cargoArgs
     Assert-That ($LASTEXITCODE -eq 0) 'Installed CLI smoke test failed.'
-    $result = Invoke-Process $uninstaller "/S _?=$appDir" 30000
+    # Successful removal inspects the scheduled task and updates PATH. Give it
+    # the same deadline as installation, including on slower ARM64 runners.
+    $result = Invoke-Process $uninstaller "/S _?=$appDir"
     $logPath = Join-Path $appDir 'xrun-install-error.log'
     $details = if (Test-Path -LiteralPath $logPath) { Get-Content -LiteralPath $logPath -Raw } else { $result.Stderr }
     Assert-That ($result.ExitCode -eq 0) "Restored App did not uninstall successfully (exit $($result.ExitCode)): $details"
@@ -224,7 +230,7 @@ try {
     $result = Run-Installer $appDir
     Assert-That ($result.ExitCode -eq 0 -and $result.Data.ok) 'Installation with a preexisting PATH entry failed.'
     Assert-That (-not (Test-Path -LiteralPath (Join-Path $appDir '.xrun-cli-path.json'))) 'Installer claimed ownership of a preexisting PATH entry.'
-    $result = Invoke-Process $uninstaller "/S _?=$appDir" 30000
+    $result = Invoke-Process $uninstaller "/S _?=$appDir"
     Assert-That ($result.ExitCode -eq 0) 'Uninstall with a preexisting PATH entry failed.'
     Assert-That ($userEnvironment.GetValue('Path', '', $rawValue) -ceq $installedPath) 'Uninstall removed a user-owned PATH entry.'
 
@@ -235,7 +241,7 @@ try {
     $result = Run-Installer $pathFailure
     Assert-That ($result.ExitCode -ne 0 -and $result.Data.error.code -eq 'CLI_INSTALL_FAILED' -and $result.Data.error.installer_exit_code -eq 34) 'PATH registration failure was not reported.'
     Assert-That ($userEnvironment.GetValue('Path') -eq 7) 'Failed PATH registration overwrote the existing value.'
-    $result = Invoke-Process (Join-Path $pathFailure 'uninstall.exe') "/S _?=$pathFailure" 30000
+    $result = Invoke-Process (Join-Path $pathFailure 'uninstall.exe') "/S _?=$pathFailure"
     Assert-That ($result.ExitCode -eq 0) 'Partially installed App did not uninstall successfully.'
     Assert-That ([Environment]::GetEnvironmentVariable('Path', 'Machine') -ceq $machinePath) 'Installer changed machine PATH.'
     Write-Host 'Automatic Windows App and CLI installation and silent failure tests passed.'
