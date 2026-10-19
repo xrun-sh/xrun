@@ -542,13 +542,14 @@ mod tests {
             &program,
             format!(
                 concat!(
-                    "#!/bin/sh\nprintf '%s\\n%s' \"$$\" \"$3\" > '{}'\n",
-                    "while test ! -e '{}'; do /bin/sleep 0.02; done\n",
-                    "printf orphan > \"$3\"\nprintf survived > '{}'\n",
+                    "#!/bin/sh\nprintf '%s\\n%s' \"$$\" \"$3\" > '{started}.pending'\n",
+                    "/bin/mv '{started}.pending' '{started}'\n",
+                    "while test ! -e '{gate}'; do /bin/sleep 0.02; done\n",
+                    "printf orphan > \"$3\"\nprintf survived > '{marker}'\n",
                 ),
-                started.display(),
-                gate.display(),
-                marker.display(),
+                started = started.display(),
+                gate = gate.display(),
+                marker = marker.display(),
             ),
         )?;
         std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700))?;
@@ -562,7 +563,9 @@ mod tests {
         })
         .await?;
         let started = std::fs::read_to_string(started)?;
-        let (pid, path) = started.split_once('\n').unwrap();
+        let (pid, path) = started
+            .split_once('\n')
+            .context("capture did not publish its PID and output path")?;
         let pid: i32 = pid.parse()?;
         let path = std::path::PathBuf::from(path);
         task.abort();
