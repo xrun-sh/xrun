@@ -19,6 +19,8 @@ interface Feed {
   jobs: Job[];
   /** Script titles of the loaded jobs, by job ID. */
   titles: Record<string, string>;
+  /** Older refreshes must not overwrite the latest first-page snapshot. */
+  newestPageEnd: Job | null;
   nextCursor: string | null;
   /** Replacing the list invalidates older pages requested before it. */
   generation: number;
@@ -56,6 +58,7 @@ function mergeNewest(
     dbId: page.db_id,
     jobs: page.entries,
     titles: { ...page.script_titles },
+    newestPageEnd: page.entries.at(-1) ?? null,
     nextCursor: page.next_cursor,
     generation: feed.generation + 1,
   };
@@ -78,14 +81,57 @@ function mergeNewest(
         ...feed,
         jobs: [...page.entries, ...older],
         titles,
+        newestPageEnd: oldest,
       }
     : { ...replaced, generation: feed.generation };
+}
+
+/** Replace one older page's time range, preserving newer reads and loaded history. */
+function mergeOlderPage(
+  feed: Feed,
+  key: string,
+  generation: number,
+  before: Job,
+  page: ActivityPage,
+): Feed {
+  if (
+    feed.key !== key ||
+    feed.dbId !== page.db_id ||
+    feed.generation !== generation ||
+    !feed.newestPageEnd
+  )
+    return feed;
+  const upper = newer(before, feed.newestPageEnd) ? feed.newestPageEnd : before;
+  const last = page.entries.at(-1);
+  if (last && !newer(upper, last)) return feed;
+  const newerJobs = feed.jobs.filter((job) => !newer(upper, job));
+  const olderJobs =
+    page.next_cursor !== null && last
+      ? feed.jobs.filter((job) => newer(last, job))
+      : [];
+  const entries = page.entries.filter((job) => newer(upper, job));
+  const titles: Record<string, string> = {};
+  for (const job of [...newerJobs, ...olderJobs]) {
+    const title = feed.titles[job.job_id];
+    if (title !== undefined) titles[job.job_id] = title;
+  }
+  for (const job of entries) {
+    const title = page.script_titles?.[job.job_id];
+    if (title !== undefined) titles[job.job_id] = title;
+  }
+  const nextCursor = olderJobs.length ? feed.nextCursor : page.next_cursor;
+  return {
+    ...feed,
+    jobs: [...newerJobs, ...entries, ...olderJobs],
+    titles,
+    nextCursor,
+    generation: feed.generation + Number(nextCursor !== feed.nextCursor),
+  };
 }
 
 export function useActivityFeed(
   active: boolean,
   paused: boolean,
-  selected: boolean,
   search: SearchTerm[],
 ) {
   const [filter, setFilter] = useState<ActivityFilter>("all");
@@ -97,6 +143,7 @@ export function useActivityFeed(
     dbId: null,
     jobs: [],
     titles: {},
+    newestPageEnd: null,
     nextCursor: null,
     generation: 0,
   });
@@ -117,7 +164,43 @@ export function useActivityFeed(
     if (!active || paused) return;
     let disposed = false;
     let pending = false;
+    let olderPending = false;
     const query = latestQuery.current;
+    const refreshOlder = async (page: ActivityPage, loaded: Feed) => {
+      if (olderPending || !overlaps(loaded, key, page)) return;
+      const oldest = loaded.jobs.at(-1);
+      olderPending = true;
+      try {
+        let before = page.entries.at(-1);
+        let cursor = page.next_cursor;
+        while (oldest && before && cursor !== null && newer(before, oldest)) {
+          const older = await api.activity(cursor, query.filter, query.search);
+          if (
+            disposed ||
+            current.current.key !== key ||
+            current.current.dbId !== page.db_id ||
+            current.current.generation !== loaded.generation
+          )
+            return;
+          const upper = before;
+          setFeed((feed) =>
+            mergeOlderPage(feed, key, loaded.generation, upper, older),
+          );
+          before = older.entries.at(-1);
+          cursor = older.next_cursor;
+        }
+      } catch (e) {
+        if (
+          !disposed &&
+          current.current.key === key &&
+          current.current.dbId === page.db_id &&
+          current.current.generation === loaded.generation
+        )
+          setError(errorText(e));
+      } finally {
+        olderPending = false;
+      }
+    };
     const load = async () => {
       if (pending || disposed) return;
       pending = true;
@@ -126,37 +209,15 @@ export function useActivityFeed(
       setLoading(changed);
       setRefreshing(true);
       try {
-        let page = await api.activity(null, query.filter, query.search);
+        const page = await api.activity(null, query.filter, query.search);
         if (disposed || token !== request.current) return;
         const loaded = current.current;
-        const oldest = overlaps(loaded, key, page)
-          ? loaded.jobs.at(-1)
-          : undefined;
-        let last = page.entries.at(-1);
-        // Refresh the loaded time range as well: older jobs can finish, stop
-        // matching a filter or lose their retained script body.
-        while (
-          oldest &&
-          last &&
-          page.next_cursor !== null &&
-          newer(last, oldest)
-        ) {
-          const older = await api.activity(
-            page.next_cursor,
-            query.filter,
-            query.search,
-          );
-          if (disposed || token !== request.current) return;
-          last = older.entries.at(-1);
-          page = {
-            ...older,
-            entries: [...page.entries, ...older.entries],
-            script_titles: { ...page.script_titles, ...older.script_titles },
-          };
-        }
+        // Publish the latest page first. Older reads run independently so a slow
+        // history page cannot hold up the next poll or an explicit refresh.
         setFeed((feed) => mergeNewest(feed, key, query, page));
         setError(null);
         if (changed) setMoreError(null);
+        void refreshOlder(page, loaded);
       } catch (e) {
         if (!disposed && token === request.current) setError(errorText(e));
       } finally {
@@ -167,9 +228,8 @@ export function useActivityFeed(
         }
       }
     };
-    // An open detail pauses polling, but a new filter or search still loads once.
-    if (!selected || current.current.key !== key) void load();
-    const timer = selected ? undefined : setInterval(() => void load(), 3000);
+    void load();
+    const timer = setInterval(() => void load(), 3000);
     return () => {
       disposed = true;
       request.current++;
@@ -177,7 +237,7 @@ export function useActivityFeed(
       setRefreshing(false);
       clearInterval(timer);
     };
-  }, [active, paused, selected, key, refreshVersion]);
+  }, [active, paused, key, refreshVersion]);
 
   const loadMore = useCallback(async () => {
     const start = current.current;
@@ -223,6 +283,7 @@ export function useActivityFeed(
                 dbId: null,
                 jobs: [],
                 titles: {},
+                newestPageEnd: null,
                 nextCursor: null,
                 generation: feed.generation + 1,
               },
@@ -253,10 +314,6 @@ export function useActivityFeed(
       setFilter(value);
       setError(null);
       setMoreError(null);
-    },
-    clearLoading: () => {
-      setLoading(false);
-      setRefreshing(false);
     },
     clearError: () => setError(null),
     retryMore: () => {

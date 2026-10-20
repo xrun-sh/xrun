@@ -79,7 +79,6 @@ export function ActivityPage({ active, paused, status, devices }: Props) {
   const activityFeed = useActivityFeed(
     active,
     paused,
-    selection !== null,
     searchTerms(query, names),
   );
   const {
@@ -228,7 +227,7 @@ export function ActivityPage({ active, paused, status, devices }: Props) {
               </label>
               <RefreshButton
                 compact
-                refreshing={selection ? detailLoading : refreshing}
+                refreshing={refreshing || detailLoading}
                 onClick={refreshActivities}
               />
             </div>
@@ -250,11 +249,10 @@ export function ActivityPage({ active, paused, status, devices }: Props) {
                           job={job}
                           scriptTitle={scriptTitles[job.job_id]}
                           sourceName={deviceLabel(job.source_device_id)}
-                          active={active && !paused && !selection}
+                          active={active && !paused}
                           selected={selection?.job.job_id === job.job_id}
                           onSelect={(button) => {
                             selectionOrigin.current = button;
-                            activityFeed.clearLoading();
                             activityFeed.clearError();
                             setSelection({ job, dbId: dbId || job.db_id });
                           }}

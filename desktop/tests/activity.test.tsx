@@ -834,7 +834,8 @@ test("a running file job updates its original detail and reveals the retained at
     }),
   });
   await page("活动");
-  fireEvent.click(await screen.findByRole("button", { name: /接收文件/ }));
+  const row = await findActivity(job.job_id);
+  fireEvent.click(row);
   await waitFor(() =>
     expect(
       document.getElementById("activity-job-detail")?.textContent,
@@ -845,7 +846,12 @@ test("a running file job updates its original detail and reveals the retained at
   job = activityJob("push", { job_id: id, attachment: retained });
   await poll();
   await screen.findByText("finished file");
-  expect(screen.getByText("已完成")).toBeTruthy();
+  expect(row.querySelector(".activity-state")?.textContent).toBe("已完成");
+  expect(
+    within(screen.getByRole("complementary", { name: "活动详情" })).getByText(
+      "已完成",
+    ),
+  ).toBeTruthy();
   expect(document.getElementById("activity-job-detail")?.textContent).toContain(
     "/repo/report.txt",
   );
